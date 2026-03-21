@@ -1,1 +1,5 @@
-max_width = 120
+# you need v1.96.0-nightly
+unstable_features = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+use_small_heuristics = "Max"
