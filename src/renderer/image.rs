@@ -71,12 +71,12 @@ thread_local! {
 /// because it is a bitty faster and avoids useless overhead.
 /// we are simply manipulating the byte array for some tiny peformance gain
 #[inline(always)]
-fn draw_text(canvas: &mut image::RgbaImage, text: &str, mut x: i32, y: i32) {
+fn draw_text(canvas: &mut image::RgbaImage, text: &[u8], mut x: i32, y: i32) {
     let canvas_width = canvas.width() as i32;
     let canvas_height = canvas.height() as i32;
     let canvas_buf = canvas.as_mut();
 
-    for &b in text.as_bytes() {
+    for &b in text {
         // look up the letter
         // we only support 1-9 and #
         let letter = match b {
@@ -236,15 +236,13 @@ pub fn create_drop_image(
         let mut left_text_buf = [0u8; 16];
         left_text_buf[0] = b'#';
         left_text_buf[1..1 + left_num_str.len()].copy_from_slice(left_num_str.as_bytes());
-        let left_text =
-            unsafe { std::str::from_utf8_unchecked(&left_text_buf[..1 + left_num_str.len()]) };
+        let left_text = &left_text_buf[..1 + left_num_str.len()];
 
         let right_num_str = itoa_buf.format(right_card_print);
         let mut right_text_buf = [0u8; 16];
         right_text_buf[0] = b'#';
         right_text_buf[1..1 + right_num_str.len()].copy_from_slice(right_num_str.as_bytes());
-        let right_text =
-            unsafe { std::str::from_utf8_unchecked(&right_text_buf[..1 + right_num_str.len()]) };
+        let right_text = &right_text_buf[..1 + right_num_str.len()];
 
         // count positions for text and draw it to the image
         let left_text_x = left_card_position as i32 + left_width as i32 - TEXT_PADDING_FROM_EDGE;
