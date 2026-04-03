@@ -1,4 +1,4 @@
-name: Rust
+name: Rust CI
 
 on:
   push:
@@ -6,17 +6,42 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Grants the workflow permission to push changes back to the repo
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        # Necessary if you want to push changes back to the repo
+        ref: ${{ github.head_ref }}
+
+    - name: Install nightly toolchain
+      run: rustup toolchain install nightly --component rustfmt clippy
+
+    # 1. Run Format and Clippy Fixes
+    - name: Format & Lint Fix
+      run: |
+        cargo +nightly fmt --all
+        cargo clippy --fix --allow-dirty --allow-staged -- -D warnings
+
+    # 2. Auto-commit changes (only if files were changed)
+    - name: Commit changes
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "style: auto-format and clippy fixes"
+        file_pattern: "*.rs"
+
+    # 3. Standard Build/Test
     - name: Build
       run: cargo build --verbose
+
     - name: Run tests
       run: cargo test --verbose
