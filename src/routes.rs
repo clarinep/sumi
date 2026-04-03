@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     response::IntoResponse,
 };
 use serde::Deserialize;
@@ -74,9 +74,9 @@ pub async fn handle_render_drop(
             (
                 StatusCode::OK,
                 [
-                    ("Content-Type", "image/webp"),
+                    (header::CONTENT_TYPE, "image/webp"),
                     // -- This is unneeded -- well well well
-                    ("Cache-Control", "public, max-age=31536000, immutable"),
+                    (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
                 ],
                 image_data,
             )
@@ -105,8 +105,8 @@ pub async fn handle_render_drop(
                 log::error!("failed: {}/{} - {}", request.left, request.right, error_msg);
             }
 
-            let json = serde_json::json!({ "error": error_msg }).to_string();
-            (status, [("Content-Type", "application/json")], json).into_response()
+            let json = axum::Json(serde_json::json!({ "error": error_msg }));
+            (status, json).into_response()
         }
     }
 }
@@ -120,17 +120,17 @@ pub async fn handle_metrics() -> impl IntoResponse {
     let bytes = REQUEST_STATS.total_bytes.load(std::sync::atomic::Ordering::Relaxed);
     let time_ns = REQUEST_STATS.total_time_ns.load(std::sync::atomic::Ordering::Relaxed);
 
-    let avg_ms = if total > 0 { (time_ns / total) as f64 / 1_000_000.0 } else { 0.0 };
+    let avg_ms = if total > 0 { (time_ns as f64 / total as f64) / 1_000_000.0 } else { 0.0 };
     let error_rate = if total > 0 { (errors as f64 / total as f64) * 100.0 } else { 0.0 };
 
     let uptime = START_TIME.elapsed().as_secs();
     let requests_per_second = if uptime > 0 { total as f64 / uptime as f64 } else { 0.0 };
 
-    let json = serde_json::json!({
+    let json = axum::Json(serde_json::json!({
         "service": { "name": "sumi", "version": "1.0.0", "uptime_seconds": uptime },
         "cache": { "hits": cache_hits, "misses": cache_misses, "hit_rate_percent": cache_hit_rate },
         "requests": { "total": total, "errors": errors, "error_rate_percent": error_rate, "avg_ms": avg_ms, "bytes": bytes, "rps": requests_per_second }
-    });
+    }));
 
-    (StatusCode::OK, [("Content-Type", "application/json")], json.to_string())
+    (StatusCode::OK, json).into_response()
 }
