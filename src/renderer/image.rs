@@ -1,15 +1,11 @@
-use std::{
-    cell::RefCell,
-    mem,
-    sync::LazyLock,
-};
+use std::{cell::RefCell, mem, sync::LazyLock};
 
 use bytes::Bytes;
 use image::RgbaImage;
 use itoa;
 
-use crate::renderer::error::RenderError;
 use super::encoding::encode_webp;
+use crate::renderer::error::RenderError;
 
 const TEXT_SIZE: f32 = 60.0;
 const TEXT_PADDING_FROM_EDGE: i32 = 190;
@@ -235,8 +231,7 @@ pub fn create_drop_image(
         // wrap the buffer into an RgbaImage so we can pass it to the encoder etc
         // we use std::mem::take to move the buffer for a while out of the RefCell
         let mut final_image =
-            RgbaImage::from_raw(total_width, total_height, mem::take(&mut *buffer))
-                .unwrap();
+            RgbaImage::from_raw(total_width, total_height, mem::take(&mut *buffer)).unwrap();
 
         // format print numbers into string
         // a bit overengineered but we use itoa instead of normal format!()
