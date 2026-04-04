@@ -270,20 +270,3 @@ pub fn create_drop_image(
         result
     })
 }
-draw it to the image
-        let left_text_x = left_card_position as i32 + left_width as i32 - TEXT_PADDING_FROM_EDGE;
-        let right_text_x = right_card_position as i32 + right_width as i32 - TEXT_PADDING_FROM_EDGE;
-        let text_y = total_height as i32 - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
-
-        draw_text(&mut final_image, left_text, left_text_x, text_y);
-        draw_text(&mut final_image, right_text, right_text_x, text_y);
-
-        // encode final drop image to webp
-        let result = super::encoding::encode_webp(&final_image);
-
-        // return buffer to the thread_local storage so it can be reused for next reqs
-        *buffer = final_image.into_raw();
-
-        result
-    })
-}
