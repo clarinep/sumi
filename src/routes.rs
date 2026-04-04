@@ -1,5 +1,8 @@
 use std::{
-    sync::{Arc, LazyLock, atomic::{AtomicU64, Ordering}},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, LazyLock,
+    },
     time::Instant,
 };
 
@@ -24,8 +27,7 @@ pub struct RenderRequest {
     pub right_print: Option<u32>,
 }
 
-static REQUEST_STATS: LazyLock<RequestStats> =
-    LazyLock::new(RequestStats::default);
+static REQUEST_STATS: LazyLock<RequestStats> = LazyLock::new(RequestStats::default);
 
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
