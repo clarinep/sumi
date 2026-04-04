@@ -2,16 +2,12 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{
-        Arc,
         atomic::{AtomicU64, Ordering},
+        Arc,
     },
 };
 
-use image::{
-    codecs::webp::WebPDecoder,
-    DynamicImage,
-    RgbaImage,
-};
+use image::{codecs::webp::WebPDecoder, DynamicImage, RgbaImage};
 use moka::future::Cache;
 use tokio::task;
 
@@ -69,10 +65,7 @@ impl CardCache {
 
         let file_index_arc = Arc::new(file_index);
 
-        Self {
-            memory: cache,
-            file_index: file_index_arc,
-        }
+        Self { memory: cache, file_index: file_index_arc }
     }
 
     /// makes a list of all image files in the folder
@@ -123,8 +116,7 @@ impl CardCache {
                     // read file and decode the image
                     let data = std::fs::read(&path).ok()?;
 
-                    let decoder =
-                        WebPDecoder::new(std::io::Cursor::new(data)).ok()?;
+                    let decoder = WebPDecoder::new(std::io::Cursor::new(data)).ok()?;
                     DynamicImage::from_decoder(decoder)
                         .ok()
                         .map(|img| img.into_rgba8())
