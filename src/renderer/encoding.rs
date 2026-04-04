@@ -1,7 +1,8 @@
-use crate::renderer::error::RenderError;
 use bytes::Bytes;
 use image::RgbaImage;
 use webpx::{EncoderConfig, Preset, Unstoppable};
+
+use crate::renderer::error::RenderError;
 
 const WEBP_QUALITY: f32 = 80.0;
 const WEBP_SPEED: u8 = 0;
