@@ -9,9 +9,8 @@ use std::{
 };
 
 use bytes::Bytes;
-use tokio::{task, time::timeout, try_join};
-
 use error::RenderError;
+use tokio::{task, time::timeout, try_join};
 
 const TIMEOUT_SECONDS: u64 = 5;
 
