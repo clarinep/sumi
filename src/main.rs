@@ -2,29 +2,13 @@ mod config;
 mod renderer;
 mod routes;
 
-use std::{
-    env,
-    error::Error,
-    net::SocketAddr,
-    sync::Arc,
-    thread,
-    time::Duration,
-};
+use std::{env, error::Error, net::SocketAddr, sync::Arc, thread, time::Duration};
 
-use axum::{
-    http::StatusCode,
-    routing::get,
-    Router,
-    serve,
-};
+use axum::{http::StatusCode, routing::get, serve, Router};
+use tokio::{net::TcpListener, runtime::Builder, signal};
 use tower_http::timeout::TimeoutLayer;
 
 use crate::renderer::CardRenderer;
-use tokio::{
-    net::TcpListener,
-    runtime::Builder,
-    signal,
-};
 
 // we use microsoft mimalloc as it handles memory better
 // it will only help when tokio is running multi threads
