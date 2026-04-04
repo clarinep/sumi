@@ -1,10 +1,19 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
+use image::{
+    codecs::webp::WebPDecoder,
+    DynamicImage,
+    RgbaImage,
+};
 use moka::future::Cache;
+use tokio::task;
 
 use crate::renderer::error::RenderError;
 
@@ -15,23 +24,23 @@ use crate::renderer::error::RenderError;
 // -- Tapi kita sini pake Arcimage::RgbaImage yg belum dikompres, sekitar 3 juta byte
 const MAX_CACHE_SIZE_KB: u64 = 1_000_000; // -- 1 GB limit di kilobyte
 
-static CACHE_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static CACHE_MISSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+static CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 
 #[inline(always)]
 pub fn record_hit() {
-    CACHE_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    CACHE_HITS.fetch_add(1, Ordering::Relaxed);
 }
 
 #[inline(always)]
 pub fn record_miss() {
-    CACHE_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    CACHE_MISSES.fetch_add(1, Ordering::Relaxed);
 }
 
 #[inline]
 pub fn get_stats() -> (u64, u64, f64) {
-    let hits = CACHE_HITS.load(std::sync::atomic::Ordering::Relaxed);
-    let misses = CACHE_MISSES.load(std::sync::atomic::Ordering::Relaxed);
+    let hits = CACHE_HITS.load(Ordering::Relaxed);
+    let misses = CACHE_MISSES.load(Ordering::Relaxed);
     let total = hits + misses;
     let hit_rate = if total == 0 { 0.0 } else { (hits as f64 / total as f64) * 100.0 };
     (hits, misses, hit_rate)
@@ -39,7 +48,7 @@ pub fn get_stats() -> (u64, u64, f64) {
 
 /// hold cached image and list of file here
 pub struct CardCache {
-    memory: Cache<Arc<str>, Arc<image::RgbaImage>>,
+    memory: Cache<Arc<str>, Arc<RgbaImage>>,
     file_index: Arc<HashMap<Arc<str>, PathBuf>>,
 }
 
@@ -48,7 +57,7 @@ impl CardCache {
     pub fn new(cards_directory: String) -> Self {
         let cache = Cache::builder()
             .max_capacity(MAX_CACHE_SIZE_KB)
-            .weigher(|_key: &Arc<str>, value: &Arc<image::RgbaImage>| {
+            .weigher(|_key: &Arc<str>, value: &Arc<RgbaImage>| {
                 // -- Cache di kilobytes biar bisa gampang ganti ke value gede
                 let size_in_bytes = value.as_raw().len();
                 (size_in_bytes / 1024).max(1) as u32
@@ -60,7 +69,10 @@ impl CardCache {
 
         let file_index_arc = Arc::new(file_index);
 
-        Self { memory: cache, file_index: file_index_arc }
+        Self {
+            memory: cache,
+            file_index: file_index_arc,
+        }
     }
 
     /// makes a list of all image files in the folder
@@ -88,7 +100,7 @@ impl CardCache {
 
     /// gets an image from cache.
     /// -- Sekarang klo gak ada kartu di situ, kita load dari disk. akan lebih lemot.
-    pub async fn get_card(&self, name: &str) -> Result<Arc<image::RgbaImage>, RenderError> {
+    pub async fn get_card(&self, name: &str) -> Result<Arc<RgbaImage>, RenderError> {
         if let Some(img) = self.memory.get(name).await {
             record_hit();
             return Ok(img);
@@ -107,15 +119,15 @@ impl CardCache {
 
         self.memory
             .try_get_with(name_arc, async move {
-                tokio::task::spawn_blocking(move || {
+                task::spawn_blocking(move || {
                     // read file and decode the image
                     let data = std::fs::read(&path).ok()?;
 
                     let decoder =
-                        image::codecs::webp::WebPDecoder::new(std::io::Cursor::new(data)).ok()?;
-                    image::DynamicImage::from_decoder(decoder)
+                        WebPDecoder::new(std::io::Cursor::new(data)).ok()?;
+                    DynamicImage::from_decoder(decoder)
                         .ok()
-                        .map(|img| img.to_rgba8())
+                        .map(|img| img.into_rgba8())
                         .map(Arc::new)
                 })
                 .await
