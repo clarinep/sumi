@@ -1,7 +1,4 @@
-use std::{
-    env,
-    path::PathBuf,
-};
+use std::{env, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -19,10 +16,7 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("C:\\Users\\hp\\Documents\\huty\\cards"));
 
-        let port = env::var("PORT")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(8888);
+        let port = env::var("PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(8888);
 
         Self { port, cards_dir }
     }
