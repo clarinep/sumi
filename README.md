@@ -66,7 +66,9 @@ graph TD
     Sumi[Sumi Axum]
     MokaCache{Moka Cache}
     CardAssets[(Card Assets - Disk)]
-    ImageCrate[image crate<br/>decode + composite]
+    Semaphore{Tokio semaphore}
+    SpawnBlocking[spawn_blocking]
+    ImageCrate[webpx decode<br/> composite]
     Fontdue[fontdue<br/>add in print numbers]
     Webpx[webpx<br/>libwebp C FFI -> encode 80% Q]
     BytesOutput[bytes::Bytes]
@@ -77,8 +79,10 @@ graph TD
     subgraph SumiRenderer["Sumi"]
         Sumi --> MokaCache
         MokaCache -->|Cache Miss| CardAssets
-        MokaCache -->|Cache Hit| ImageCrate
-        CardAssets --> ImageCrate
+        MokaCache -->|Cache Hit| Semaphore
+        CardAssets --> Semaphore
+        Semaphore -->|Acquire Permit| SpawnBlocking
+        SpawnBlocking --> ImageCrate
         ImageCrate --> Fontdue
         Fontdue --> Webpx
         Webpx --> BytesOutput
@@ -95,14 +99,17 @@ graph TD
     classDef storage fill:#72B7D6,stroke:#4A7FA7,color:#fff,stroke-width:3px
     classDef processing fill:#A78BFA,stroke:#7C3AED,color:#fff,stroke-width:3px
     classDef output fill:#06B6D4,stroke:#0891B2,color:#fff,stroke-width:3px
+    classDef control fill:#EF4444,stroke:#B91C1C,color:#fff,stroke-width:3px
 
     class DiscordAPI discord
     class BlairGo bot
     class Sumi service
     class MokaCache decision
     class CardAssets storage
+    class Semaphore control
+    class SpawnBlocking control
     class ImageCrate processing
     class Fontdue processing
     class Webpx processing
     class BytesOutput output
- ``` 
+```
