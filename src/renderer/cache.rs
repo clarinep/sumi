@@ -160,8 +160,9 @@ impl CardCache {
             // wait for every damn remaining tasks to complete by acquiring all available permits
             let _ = semaphore.acquire_many(8).await.unwrap();
 
+            // slightly innacurate size as it counts the lexend deca .ttf file
             log::info!(
-                "background pre-warm finished. warm {} cards ({} MB).",
+                "finished baking {} cards - {} mb",
                 warmed.load(std::sync::atomic::Ordering::Relaxed),
                 warmed_kb.load(std::sync::atomic::Ordering::Relaxed) / 1024
             );
