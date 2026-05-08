@@ -29,13 +29,14 @@ jobs:
       env:
         CARDS_DIR: "assets"
         PORT: 6767
-        RUST_LOG: debug
+        RUST_LOG: info
       run: |
         cargo +nightly run --release > sumi.log 2>&1 &
         SUMI_PID=$!
         tail -f sumi.log &
         TAIL_PID=$!
         sleep 5
+        wrk -t4 -c4 -d10s -s benchmark.lua http://localhost:6767 
         wrk -t4 -c100 -d30s --timeout 10s -s benchmark.lua http://localhost:6767
         kill $SUMI_PID || true
         kill $TAIL_PID || true
