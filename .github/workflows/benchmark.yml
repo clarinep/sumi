@@ -3,6 +3,9 @@ name: Benchmark sumi
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -12,6 +15,9 @@ jobs:
 
     - name: Install rust
       run: rustup toolchain install nightly
+      
+    - name: Cache rust environment
+      uses: Swatinem/rust-cache@v2
 
     - name: Install wrk
       run: sudo apt-get update && sudo apt-get install -y wrk
@@ -31,12 +37,13 @@ jobs:
         PORT: 6767
         RUST_LOG: info
       run: |
-        cargo +nightly run --release > sumi.log 2>&1 &
+        ./target/release/sumi > sumi.log 2>&1 &
         SUMI_PID=$!
-        tail -f sumi.log &
-        TAIL_PID=$!
-        sleep 5
-        wrk -t4 -c4 -d10s -s benchmark.lua http://localhost:6767 
+        sleep 3
+        wrk -t4 -c4 -d10s -s benchmark.lua http://localhost:6767
+        echo -e "\n\n\n"
         wrk -t4 -c100 -d30s --timeout 10s -s benchmark.lua http://localhost:6767
         kill $SUMI_PID || true
-        kill $TAIL_PID || true
+        echo -e "\n"
+        cat sumi.log
+  
