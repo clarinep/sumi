@@ -194,7 +194,7 @@ pub fn create_drop_image(
     // for these kinds of allocations, removing the need for Mutex buffer pool.
     let mut buffer: Vec<u8> = Vec::with_capacity(required_len);
 
-    // -- maybeuninit 
+    // -- maybeuninit
     // 1. ask for memory from the OS (via reserve) but do not start it yet.
     // 2. manually spam zero fill ONLY the transparent padding areas using fast memset `write_bytes`
     // 3. skip the whole 3MB+ full buffer `vec![0]` iter cycle. so now the card pixel memory
