@@ -1,0 +1,105 @@
+pub mod cache;
+pub mod canvas;
+pub mod encoding;
+pub mod error;
+
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use error::RenderError;
+use tokio::time::timeout;
+
+const TIMEOUT_SECONDS: u64 = 10;
+
+/// simple counter to keep track of how sumi is doing.
+#[derive(Default, Debug)]
+pub struct RequestStats {
+    pub total_requests: std::sync::atomic::AtomicU64,
+    pub failed_requests: std::sync::atomic::AtomicU64,
+}
+
+impl RequestStats {
+    /// saves details of a single request after it finishes
+    /// this updates our running totals safely across multiple threads.
+    #[inline(always)]
+    pub fn record(&self, did_fail: bool) {
+        self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if did_fail {
+            self.failed_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CardRenderer {
+    pub card_cache: Arc<cache::CardCache>,
+    pub stats: Arc<RequestStats>,
+    pub start_time: Instant,
+    cpu_semaphore: Arc<tokio::sync::Semaphore>,
+}
+
+impl CardRenderer {
+    pub fn new(cards_directory: impl Into<std::path::PathBuf>) -> Result<Self, &'static str> {
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+        log::info!("sumi found {} cpu cores", cores);
+        canvas::init_font();
+
+        Ok(Self {
+            card_cache: Arc::new(cache::CardCache::new(cards_directory.into())?),
+            stats: Arc::new(RequestStats::default()),
+            start_time: Instant::now(),
+            cpu_semaphore: Arc::new(tokio::sync::Semaphore::new(cores)),
+        })
+    }
+
+    /// creates the final image.
+    /// if an image cant render your drop in 5 seconds, Too bad!
+    /// in blair-go side your cooldown wont get used. users can just try dropping again.
+    pub async fn render_drop(
+        &self,
+        left_card_name: &str,
+        right_card_name: &str,
+        left_print_number: u32,
+        right_print_number: u32,
+    ) -> Result<bytes::Bytes, RenderError> {
+        let render_future = async {
+            let start_fetch = std::time::Instant::now();
+            let (left_card, right_card) = tokio::try_join!(
+                self.card_cache.get_card(left_card_name),
+                self.card_cache.get_card(right_card_name)
+            )?;
+            let fetch_elapsed = start_fetch.elapsed();
+            log::debug!("fetching cards took {:.3}ms", fetch_elapsed.as_secs_f64() * 1000.0);
+
+            // need to acquire an owned permit so we can move it inside the blocking thread.
+            // if the request times out, the thread still holds the permit until it finishes
+            let permit = self
+                .cpu_semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("cpu semaphore closed unexpectedly");
+
+            // move the heavy image work to a background thread
+            let result = tokio::task::spawn_blocking(move || {
+                let _lock = permit;
+                canvas::create_drop_image(
+                    &left_card,
+                    &right_card,
+                    left_print_number,
+                    right_print_number,
+                )
+            })
+            .await
+            .map_err(|e| RenderError::Internal(format!("task failed: {e}")))??;
+
+            Ok(result)
+        };
+
+        timeout(Duration::from_secs(TIMEOUT_SECONDS), render_future)
+            .await
+            .map_err(|_| RenderError::Timeout)?
+    }
+}
