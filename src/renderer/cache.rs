@@ -75,7 +75,7 @@ impl CardCache {
                     let path = entry.path();
                     if path.is_dir() {
                         find_card(base_dir, &path, index);
-                    } else if path.extension().map(|e| e == "webp").unwrap_or(false) {
+                    } else if path.extension().is_some_and(|e| e == "webp") {
                         if let Ok(rel_path) = path.strip_prefix(base_dir) {
                             let key_path = rel_path.with_extension("");
                             let name_str = key_path.to_string_lossy().replace('\\', "/");
@@ -201,7 +201,10 @@ impl CardCache {
                 tokio::task::spawn_blocking(move || {
                     // open the file and decode the image directly using webpx
                     let file_bytes = std::fs::read(&path).map_err(|e| {
-                        RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
+                        RenderError::Internal(format!(
+                            "failed to open file '{}': {e}",
+                            path.display()
+                        ))
                     })?;
 
                     let (pixels, width, height) = webpx::decode_rgba(&file_bytes).map_err(|e| {

@@ -135,9 +135,8 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
                 ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4)
                     .try_into()
                     .unwrap();
-            let letter_pixel_start: usize = (draw_y_offset * letter_width + draw_x_start)
-                .try_into()
-                .unwrap();
+            let letter_pixel_start: usize =
+                (draw_y_offset * letter_width + draw_x_start).try_into().unwrap();
 
             let count: usize = (draw_x_end - draw_x_start).try_into().unwrap();
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
@@ -150,13 +149,13 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
                     pixel[2] = 255;
                     pixel[3] = 255;
                 } else if coverage > 0 {
-                    let alpha = coverage as u32;
+                    let alpha = u32::from(coverage);
                     let inv_alpha = 255 - alpha;
 
-                    let r = pixel[0] as u32;
-                    let g = pixel[1] as u32;
-                    let b = pixel[2] as u32;
-                    let a = pixel[3] as u32;
+                    let r = u32::from(pixel[0]);
+                    let g = u32::from(pixel[1]);
+                    let b = u32::from(pixel[2]);
+                    let a = u32::from(pixel[3]);
 
                     // divide by 256 using bitshift.
                     // this will make it 254 instead of 255 but is mathematically much faster.
@@ -175,7 +174,7 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
 }
 
 /// combine two card images and add print numbers = drop image
-/// we use thread_local buffer to make drop image, manually copying
+/// we use `thread_local` buffer to make drop image, manually copying
 /// pixel rows from the card images. this is much faster than creating a new
 /// blank image and using a library to paste the card images to it.
 pub fn create_drop_image(
@@ -200,7 +199,7 @@ pub fn create_drop_image(
     let required_len = (total_width * total_height * 4) as usize;
 
     // We can just use the standard vec! macro.
-    // This removes need for unsafe block here and is optimized by compiler. 
+    // This removes need for unsafe block here and is optimized by compiler.
     let mut buffer: Vec<u8> = vec![0; required_len];
 
     // count starting position for the left and right card.
@@ -250,22 +249,27 @@ pub fn create_drop_image(
     let left_num_str = itoa_buf.format(left_card_print);
     let mut left_text_buf = [0u8; 16];
     left_text_buf[0] = b'#';
-    left_text_buf[1..1 + left_num_str.len()].copy_from_slice(left_num_str.as_bytes());
-    let left_text = &left_text_buf[..1 + left_num_str.len()];
+    left_text_buf[1..=left_num_str.len()].copy_from_slice(left_num_str.as_bytes());
+    let left_text = &left_text_buf[..=left_num_str.len()];
 
     let right_num_str = itoa_buf.format(right_card_print);
     let mut right_text_buf = [0u8; 16];
     right_text_buf[0] = b'#';
-    right_text_buf[1..1 + right_num_str.len()].copy_from_slice(right_num_str.as_bytes());
-    let right_text = &right_text_buf[..1 + right_num_str.len()];
+    right_text_buf[1..=right_num_str.len()].copy_from_slice(right_num_str.as_bytes());
+    let right_text = &right_text_buf[..=right_num_str.len()];
 
     let canvas_time = start_canvas.elapsed();
 
     let start_text = std::time::Instant::now();
     // count positions for text and draw it to the image
-    let left_text_x: i32 = i32::try_from(left_card_position).unwrap() + i32::try_from(left_width).unwrap() - TEXT_PADDING_FROM_EDGE;
-    let right_text_x: i32 = i32::try_from(right_card_position).unwrap() + i32::try_from(right_width).unwrap() - TEXT_PADDING_FROM_EDGE;
-    let text_y: i32 = i32::try_from(total_height).unwrap() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    let left_text_x: i32 = i32::try_from(left_card_position).unwrap()
+        + i32::try_from(left_width).unwrap()
+        - TEXT_PADDING_FROM_EDGE;
+    let right_text_x: i32 = i32::try_from(right_card_position).unwrap()
+        + i32::try_from(right_width).unwrap()
+        - TEXT_PADDING_FROM_EDGE;
+    let text_y: i32 =
+        i32::try_from(total_height).unwrap() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
     draw_text(&mut final_image, left_text, left_text_x, text_y);
     draw_text(&mut final_image, right_text, right_text_x, text_y);

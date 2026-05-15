@@ -42,8 +42,8 @@ pub struct CardRenderer {
 
 impl CardRenderer {
     pub fn new(cards_directory: impl Into<std::path::PathBuf>) -> Result<Self, &'static str> {
-        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-        log::info!("sumi found {} cpu cores", cores);
+        let cores = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
+        log::info!("sumi found {cores} cpu cores");
         canvas::init_font();
 
         Ok(Self {
