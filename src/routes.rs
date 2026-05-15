@@ -55,7 +55,7 @@ pub async fn handle_render_drop(
 
             let (status, error_msg) = match error {
                 RenderError::CardNotFound(name) => {
-                    (StatusCode::NOT_FOUND, format!("card not found: {}", name))
+                    (StatusCode::NOT_FOUND, format!("card not found: {name}"))
                 }
                 RenderError::Timeout => {
                     (StatusCode::GATEWAY_TIMEOUT, "render timed out".to_string())

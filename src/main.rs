@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let addr = std::net::SocketAddr::from(([127, 0, 0, 1], cfg.port));
             let listener = tokio::net::TcpListener::bind(addr).await?;
 
-            log::info!("server ready at http://{}", addr);
+            log::info!("server ready at http://{addr}");
 
             axum::serve(listener, app).with_graceful_shutdown(shutdown()).await?;
 

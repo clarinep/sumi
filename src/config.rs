@@ -13,8 +13,7 @@ impl Config {
         // quick note to velo, kartu ditemuin di folder huty bukan di folder sumi, folder asset sini
         // cuman buat font nya saja buat nomor print di kartu drop.
         let cards_dir = env::var("CARDS_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("C:\\Users\\hp\\Documents\\huty\\cards"));
+            .map_or_else(|_| PathBuf::from("C:\\Users\\hp\\Documents\\huty\\cards"), PathBuf::from);
 
         let port = env::var("PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(8888);
 

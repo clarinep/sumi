@@ -141,13 +141,13 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
                     pixel[2] = 255;
                     pixel[3] = 255;
                 } else if coverage > 0 {
-                    let alpha = coverage as u32;
+                    let alpha = u32::from(coverage);
                     let inv_alpha = 255 - alpha;
 
-                    let r = pixel[0] as u32;
-                    let g = pixel[1] as u32;
-                    let b = pixel[2] as u32;
-                    let a = pixel[3] as u32;
+                    let r = u32::from(pixel[0]);
+                    let g = u32::from(pixel[1]);
+                    let b = u32::from(pixel[2]);
+                    let a = u32::from(pixel[3]);
 
                     // divide by 256 using bitshift.
                     // this will make it 254 instead of 255 but is mathematically much faster.
@@ -166,7 +166,7 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
 }
 
 /// combine two card images and add print numbers = drop image
-/// we use thread_local buffer to make drop image, manually copying
+/// we use `thread_local` buffer to make drop image, manually copying
 /// pixel rows from the card images. this is much faster than creating a new
 /// blank image and using a library to paste the card images to it.
 pub fn create_drop_image(
@@ -300,14 +300,14 @@ pub fn create_drop_image(
     let left_num_str = itoa_buf.format(left_card_print);
     let mut left_text_buf = [0u8; 16];
     left_text_buf[0] = b'#';
-    left_text_buf[1..1 + left_num_str.len()].copy_from_slice(left_num_str.as_bytes());
-    let left_text = &left_text_buf[..1 + left_num_str.len()];
+    left_text_buf[1..=left_num_str.len()].copy_from_slice(left_num_str.as_bytes());
+    let left_text = &left_text_buf[..=left_num_str.len()];
 
     let right_num_str = itoa_buf.format(right_card_print);
     let mut right_text_buf = [0u8; 16];
     right_text_buf[0] = b'#';
-    right_text_buf[1..1 + right_num_str.len()].copy_from_slice(right_num_str.as_bytes());
-    let right_text = &right_text_buf[..1 + right_num_str.len()];
+    right_text_buf[1..=right_num_str.len()].copy_from_slice(right_num_str.as_bytes());
+    let right_text = &right_text_buf[..=right_num_str.len()];
 
     let canvas_time = start_canvas.elapsed();
 
