@@ -46,7 +46,7 @@ impl std::fmt::Debug for CardCache {
 
 impl CardCache {
     /// sets up the cache and finds all images
-    pub fn new(cards_directory: &std::path::Path) -> Result<Self, &'static str> {
+    pub fn new(cards_directory: impl AsRef<std::path::Path>) -> Result<Self, &'static str> {
         let cache = Cache::builder()
             .max_capacity(MAX_CACHE_SIZE_KB)
             .weigher(|_key, value: &Arc<RawCardImage>| -> u32 {
@@ -55,7 +55,7 @@ impl CardCache {
             })
             .build();
 
-        let file_index = Self::build_card_list(&cards_directory);
+        let file_index = Self::build_card_list(cards_directory.as_ref());
 
         if file_index.is_empty() {
             return Err("found literally zero cards in the folder.. sumi is refusing to wake up");
