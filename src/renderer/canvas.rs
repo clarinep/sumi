@@ -86,10 +86,11 @@ pub fn init_font() {
 /// we do this manually instead of using a image processing library
 /// because it is a bitty faster and avoids useless overhead.
 /// we are simply manipulating the byte array for some tiny peformance gain
-#[inline(always)]
+#[inline]
+#[allow(clippy::many_single_char_names)]
 fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
-    let canvas_width = canvas.width as i32;
-    let canvas_height = canvas.height as i32;
+    let canvas_width: i32 = canvas.width.try_into().unwrap();
+    let canvas_height: i32 = canvas.height.try_into().unwrap();
     let canvas_buf = &mut canvas.pixels;
 
     for &b in text {
@@ -101,10 +102,14 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             _ => continue,
         };
 
+        // pre-cast letter dimensions once
+        let letter_width: i32 = letter.width.try_into().unwrap();
+        let letter_height: i32 = letter.height.try_into().unwrap();
+
         // count the starting x and y coords for letter on the canvas
         let draw_y = y + letter.offset_y;
 
-        for draw_y_offset in 0..letter.height as i32 {
+        for draw_y_offset in 0..letter_height {
             let canvas_y = draw_y + draw_y_offset;
 
             // skip row if its outside canvas
@@ -114,10 +119,10 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
 
             // count and make sure we dont draw outside canvas
             let draw_x_start = if x + letter.offset_x < 0 { -(x + letter.offset_x) } else { 0 };
-            let draw_x_end = if x + letter.offset_x + letter.width as i32 > canvas_width {
+            let draw_x_end = if x + letter.offset_x + letter_width > canvas_width {
                 canvas_width - (x + letter.offset_x)
             } else {
-                letter.width as i32
+                letter_width
             };
 
             // skip if the letter horizontally is outside canvas
@@ -126,11 +131,15 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             }
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            let canvas_pixel_start =
-                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
-            let letter_pixel_start = (draw_y_offset * letter.width as i32 + draw_x_start) as usize;
+            let canvas_pixel_start: usize =
+                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4)
+                    .try_into()
+                    .unwrap();
+            let letter_pixel_start: usize = (draw_y_offset * letter_width + draw_x_start)
+                .try_into()
+                .unwrap();
 
-            let count = (draw_x_end - draw_x_start) as usize;
+            let count: usize = (draw_x_end - draw_x_start).try_into().unwrap();
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
             let glyph_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
 
@@ -141,13 +150,13 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
                     pixel[2] = 255;
                     pixel[3] = 255;
                 } else if coverage > 0 {
-                    let alpha = u32::from(coverage);
+                    let alpha = coverage as u32;
                     let inv_alpha = 255 - alpha;
 
-                    let r = u32::from(pixel[0]);
-                    let g = u32::from(pixel[1]);
-                    let b = u32::from(pixel[2]);
-                    let a = u32::from(pixel[3]);
+                    let r = pixel[0] as u32;
+                    let g = pixel[1] as u32;
+                    let b = pixel[2] as u32;
+                    let a = pixel[3] as u32;
 
                     // divide by 256 using bitshift.
                     // this will make it 254 instead of 255 but is mathematically much faster.
@@ -166,7 +175,7 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
 }
 
 /// combine two card images and add print numbers = drop image
-/// we use `thread_local` buffer to make drop image, manually copying
+/// we use thread_local buffer to make drop image, manually copying
 /// pixel rows from the card images. this is much faster than creating a new
 /// blank image and using a library to paste the card images to it.
 pub fn create_drop_image(
@@ -190,68 +199,9 @@ pub fn create_drop_image(
     // make sure buffer big enough for image (width * height * 4 bytes per pixel).
     let required_len = (total_width * total_height * 4) as usize;
 
-    // now we allocate the buffer directly since we are using mimalloc which is optimized
-    // for these kinds of allocations, removing the need for Mutex buffer pool.
-    let mut buffer: Vec<u8> = Vec::with_capacity(required_len);
-
-    // -- maybeuninit
-    // 1. ask for memory from the OS (via reserve) but do not start it yet.
-    // 2. manually spam zero fill ONLY the transparent padding areas using fast memset `write_bytes`
-    // 3. skip the whole 3MB+ full buffer `vec![0]` iter cycle. so now the card pixel memory
-    //    is left uninitialized here because it gets safely overwritten via `copy_from_slice` below
-    //
-    // safety guarantee:
-    // - we only offset pointers strictly within the mathematically bound `required_len`.
-    // - `u8` bytes require no drop glue, so leaving some uninitialized here is harmless.
-    // - we commit the memory bounds with `set_len` securely at the very end of pointer work.
-    unsafe {
-        let ptr = buffer.as_mut_ptr();
-        let row_bytes = (total_width * 4) as usize;
-
-        for y in 0..total_height {
-            let row_start = (y as usize) * row_bytes;
-
-            // top and bottom transparent padding rows
-            if y < PADDING_BETWEEN_CARDS as u32
-                || y >= total_height - (PADDING_BETWEEN_CARDS as u32)
-            {
-                std::ptr::write_bytes(ptr.add(row_start), 0, row_bytes);
-            } else {
-                // transparent middle part of cards
-                let mut offset = 0;
-                let pad_bytes = (PADDING_BETWEEN_CARDS as usize) * 4;
-
-                // left padding
-                std::ptr::write_bytes(ptr.add(row_start + offset), 0, pad_bytes);
-                offset += pad_bytes;
-
-                // left card box
-                let left_card_w_bytes = (left_width as usize) * 4;
-                let card_y = y - (PADDING_BETWEEN_CARDS as u32);
-                if card_y >= left_height {
-                    std::ptr::write_bytes(ptr.add(row_start + offset), 0, left_card_w_bytes);
-                }
-                offset += left_card_w_bytes;
-
-                // center padding
-                std::ptr::write_bytes(ptr.add(row_start + offset), 0, pad_bytes);
-                offset += pad_bytes;
-
-                // right card box
-                let right_card_w_bytes = (right_width as usize) * 4;
-                if card_y >= right_height {
-                    std::ptr::write_bytes(ptr.add(row_start + offset), 0, right_card_w_bytes);
-                }
-                offset += right_card_w_bytes;
-
-                // right side padding
-                std::ptr::write_bytes(ptr.add(row_start + offset), 0, pad_bytes);
-            }
-        }
-
-        // finish lock in the started length so slices can index it safely
-        buffer.set_len(required_len);
-    }
+    // We can just use the standard vec! macro.
+    // This removes need for unsafe block here and is optimized by compiler. 
+    let mut buffer: Vec<u8> = vec![0; required_len];
 
     // count starting position for the left and right card.
     let left_card_position = PADDING_BETWEEN_CARDS as u32;
@@ -300,22 +250,22 @@ pub fn create_drop_image(
     let left_num_str = itoa_buf.format(left_card_print);
     let mut left_text_buf = [0u8; 16];
     left_text_buf[0] = b'#';
-    left_text_buf[1..=left_num_str.len()].copy_from_slice(left_num_str.as_bytes());
-    let left_text = &left_text_buf[..=left_num_str.len()];
+    left_text_buf[1..1 + left_num_str.len()].copy_from_slice(left_num_str.as_bytes());
+    let left_text = &left_text_buf[..1 + left_num_str.len()];
 
     let right_num_str = itoa_buf.format(right_card_print);
     let mut right_text_buf = [0u8; 16];
     right_text_buf[0] = b'#';
-    right_text_buf[1..=right_num_str.len()].copy_from_slice(right_num_str.as_bytes());
-    let right_text = &right_text_buf[..=right_num_str.len()];
+    right_text_buf[1..1 + right_num_str.len()].copy_from_slice(right_num_str.as_bytes());
+    let right_text = &right_text_buf[..1 + right_num_str.len()];
 
     let canvas_time = start_canvas.elapsed();
 
     let start_text = std::time::Instant::now();
     // count positions for text and draw it to the image
-    let left_text_x = left_card_position as i32 + left_width as i32 - TEXT_PADDING_FROM_EDGE;
-    let right_text_x = right_card_position as i32 + right_width as i32 - TEXT_PADDING_FROM_EDGE;
-    let text_y = total_height as i32 - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    let left_text_x: i32 = i32::try_from(left_card_position).unwrap() + i32::try_from(left_width).unwrap() - TEXT_PADDING_FROM_EDGE;
+    let right_text_x: i32 = i32::try_from(right_card_position).unwrap() + i32::try_from(right_width).unwrap() - TEXT_PADDING_FROM_EDGE;
+    let text_y: i32 = i32::try_from(total_height).unwrap() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
     draw_text(&mut final_image, left_text, left_text_x, text_y);
     draw_text(&mut final_image, right_text, right_text_x, text_y);
