@@ -1,7 +1,7 @@
-name: Auto-Fix Clippy Perf & Lints
+name: Clippy
 
 on:
-  workflow_dispatch: # You can trigger this manually from the Actions tab
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,7 +12,7 @@ jobs:
     name: Clippy Target & Fix
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Needed to push the fixes back to the repo
+      contents: write
 
     steps:
       - name: Checkout code
@@ -21,7 +21,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal -c clippy rustfmt
+        run: |
+          rustup default stable
+          rustup component add clippy
+          rustup toolchain install nightly --profile minimal -c rustfmt
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -41,12 +44,11 @@ jobs:
             -A clippy::cast_precision_loss
 
       - name: Format the code
-        run: cargo fmt --all
+        run: cargo +nightly fmt --all
 
       - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -u
-          # Proceed to commit only if clippy actually changed files
-          git diff --quiet && git diff --staged --quiet || (git commit -m "perf: auto-fix clippy optimizations & stylings" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "style: clippy fixes" && git push)
