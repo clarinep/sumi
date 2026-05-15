@@ -1,0 +1,52 @@
+name: Auto-Fix Clippy Perf & Lints
+
+on:
+  workflow_dispatch: # You can trigger this manually from the Actions tab
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings" 
+
+jobs:
+  clippy-auto-fix:
+    name: Clippy Target & Fix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to push the fixes back to the repo
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal -c clippy rustfmt
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Auto-fix Clippy warnings
+        run: |
+          # --allow-dirty and --allow-no-vcs lets it fix files right here in the runner
+          # We enable perf, pedantic, and nursery, but ignore missing docs so it doesn't clutter code
+          cargo clippy --fix --workspace --allow-dirty --allow-no-vcs -- \
+            -W clippy::perf \
+            -W clippy::pedantic \
+            -W clippy::nursery \
+            -A clippy::missing_errors_doc \
+            -A clippy::missing_panics_doc \
+            -A clippy::must_use_candidate \
+            -A clippy::cast_possible_truncation \
+            -A clippy::cast_precision_loss
+
+      - name: Format the code
+        run: cargo fmt --all
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          # Proceed to commit only if clippy actually changed files
+          git diff --quiet && git diff --staged --quiet || (git commit -m "perf: auto-fix clippy optimizations & stylings" && git push)
