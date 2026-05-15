@@ -8,7 +8,7 @@ use moka::future::Cache;
 
 use crate::renderer::{canvas::RawCardImage, error::RenderError};
 
-// limit of images, moka will auto kick older images
+// limit of images, moka will auto kick older images.
 // moka uses LFU algorithm so if by rng a card smh keeps getting dropped then it will protect
 // and kick out other less "popular" card that was NATURALLY unlucky to not be chosen by blair.
 // -- Buat lebih konteks per kartu sekitar 200kb, kalau RAM kena cap kita turunin aja
