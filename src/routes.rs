@@ -1,11 +1,15 @@
-use std::{sync::Arc, time::Instant};
-
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
+    Json,
 };
 use serde::Deserialize;
+use serde_json::json;
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Instant,
+};
 
 use crate::renderer::{error::RenderError, CardRenderer};
 
@@ -69,8 +73,8 @@ pub async fn handle_render_drop(
                 log::debug!("failed: {}/{} - {}", request.left, request.right, error_msg);
             }
 
-            let json = axum::Json(serde_json::json!({ "error": error_msg }));
-            (status, json).into_response()
+            let json_resp = Json(json!({ "error": error_msg }));
+            (status, json_resp).into_response()
         }
     }
 }
@@ -79,19 +83,19 @@ pub async fn handle_render_drop(
 pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
     let (cache_hits, cache_misses, cache_hit_rate) = renderer.card_cache.get_stats();
 
-    let total = renderer.stats.total_requests.load(std::sync::atomic::Ordering::Relaxed);
-    let errors = renderer.stats.failed_requests.load(std::sync::atomic::Ordering::Relaxed);
+    let total = renderer.stats.total_requests.load(Ordering::Relaxed);
+    let errors = renderer.stats.failed_requests.load(Ordering::Relaxed);
 
     let error_rate = if total > 0 { (errors as f64 / total as f64) * 100.0 } else { 0.0 };
 
     let uptime = renderer.start_time.elapsed().as_secs();
 
     // some of the metrics will be removed in next updates as we dont use these anymore except uptime
-    let json = axum::Json(serde_json::json!({
-        "service": { "name": "sumi", "version": "1.0.0", "uptime_seconds": uptime },
+    let json_resp = Json(json!({
+        "service": { "name": "sumi", "version": "1.1.0", "uptime_seconds": uptime },
         "cache": { "hits": cache_hits, "misses": cache_misses, "hit_rate_percent": cache_hit_rate },
         "requests": { "total": total, "errors": errors, "error_rate_percent": error_rate }
     }));
 
-    (StatusCode::OK, json).into_response()
+    (StatusCode::OK, json_resp).into_response()
 }
