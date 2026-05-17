@@ -24,4 +24,7 @@
   opt-level     = 3
   codegen-units = 1
   panic         = "abort"
-  strip = "symbols"  
+  strip         = "symbols"  
+
+[profile.dev]
+  debug = false
