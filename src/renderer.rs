@@ -40,24 +40,24 @@ impl RequestStats {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CardRenderer {
-    pub card_cache: Arc<CardCache>,
-    pub stats: Arc<RequestStats>,
+    pub card_cache: CardCache,
+    pub stats: RequestStats,
     pub start_time: Instant,
     cpu_semaphore: Arc<Semaphore>,
     total_permits: usize,
 }
 
 impl CardRenderer {
-    pub fn new(cards_directory: impl Into<PathBuf>) -> Result<Self, &'static str> {
+    pub fn new(cards_directory: impl Into<PathBuf>) -> Result<Self, RenderError> {
         let cores = thread::available_parallelism().map_or(4, NonZero::get);
         log::info!("sumi found {cores} cpu cores");
         init_font();
 
         Ok(Self {
-            card_cache: Arc::new(CardCache::new(cards_directory.into())?),
-            stats: Arc::new(RequestStats::default()),
+            card_cache: CardCache::new(cards_directory.into())?,
+            stats: RequestStats::default(),
             start_time: Instant::now(),
             cpu_semaphore: Arc::new(Semaphore::new(cores)),
             total_permits: cores,
