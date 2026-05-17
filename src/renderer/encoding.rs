@@ -1,4 +1,7 @@
-use crate::renderer::error::RenderError;
+use bytes::Bytes;
+use webpx::{EncoderConfig, Preset, Unstoppable};
+
+use crate::renderer::{canvas::RawCardImage, error::RenderError};
 
 const WEBP_QUALITY: f32 = 80.0;
 const WEBP_SPEED: i32 = 0;
@@ -16,10 +19,7 @@ const WEBP_SEGMENTS: i32 = 1;
 /// the point of skipping alpha compression in webpx is also pointless - similar reason
 /// using lossless is also not worth, although encoding takes 100ms instead of our current 350ms
 /// it is uncompressed and our drop image dimension is huge so again file size would be 2 MB - bad.
-#[inline]
-pub fn encode_webp(
-    image: &crate::renderer::canvas::RawCardImage,
-) -> Result<bytes::Bytes, RenderError> {
+pub fn encode_webp(image: &RawCardImage) -> Result<Bytes, RenderError> {
     let width = image.width;
     let height = image.height;
     let pixel_data = &image.pixels;
@@ -27,9 +27,9 @@ pub fn encode_webp(
     // we keep encoding on one thread so we avoid slowing down the server.
     // this is by far the only overhead we have, it'll take ~100ms per img.
     // see all other options at https://crates.io/crates/webpx
-    let settings = webpx::EncoderConfig::new()
+    let settings = EncoderConfig::new()
         // preset needs more testing to check which one is best for our cards
-        .preset(webpx::Preset::Picture)
+        .preset(Preset::Picture)
         .quality(WEBP_QUALITY)
         .method(WEBP_SPEED as u8)
         .thread_level(WEBP_THREAD_LEVEL as u8)
@@ -43,8 +43,8 @@ pub fn encode_webp(
         .segments(WEBP_SEGMENTS as u8);
 
     let webp_data: Vec<u8> = settings
-        .encode_rgba(pixel_data, width, height, webpx::Unstoppable)
+        .encode_rgba(pixel_data, width, height, Unstoppable)
         .map_err(|error| RenderError::EncodeError(error.to_string()))?;
 
-    Ok(bytes::Bytes::from(webp_data))
+    Ok(Bytes::from(webp_data))
 }
