@@ -1,3 +1,8 @@
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Instant,
+};
+
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
@@ -6,10 +11,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use std::{
-    sync::{atomic::Ordering, Arc},
-    time::Instant,
-};
 
 use crate::renderer::{error::RenderError, CardRenderer};
 

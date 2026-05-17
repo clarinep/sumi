@@ -3,10 +3,6 @@ pub mod canvas;
 pub mod encoding;
 pub mod error;
 
-use bytes::Bytes;
-use cache::CardCache;
-use canvas::{create_drop_image, init_font};
-use error::RenderError;
 use std::{
     num::NonZero,
     path::PathBuf,
@@ -17,6 +13,11 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
+use bytes::Bytes;
+use cache::CardCache;
+use canvas::{create_drop_image, init_font};
+use error::RenderError;
 use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 const TIMEOUT_SECONDS: u64 = 10;
@@ -65,9 +66,10 @@ impl CardRenderer {
 
     /// wait for all background workers to finish
     pub async fn wait_for_tasks_to_finish(&self) {
-        let active_tasks = self.total_permits.saturating_sub(self.cpu_semaphore.available_permits());
+        let active_tasks =
+            self.total_permits.saturating_sub(self.cpu_semaphore.available_permits());
         if active_tasks > 0 {
-            log::info!("waiting for {} tasks to drain...", active_tasks);
+            log::info!("waiting for {active_tasks} tasks to drain...");
         }
         let _ = self.cpu_semaphore.acquire_many(self.total_permits as u32).await;
         log::info!("all tasks cleared!");
@@ -104,12 +106,7 @@ impl CardRenderer {
             // move the heavy image work to a background thread
             let result = task::spawn_blocking(move || {
                 let _lock = permit;
-                create_drop_image(
-                    &left_card,
-                    &right_card,
-                    left_print_number,
-                    right_print_number,
-                )
+                create_drop_image(&left_card, &right_card, left_print_number, right_print_number)
             })
             .await
             .map_err(|e| RenderError::Internal(format!("task failed: {e}")))??;

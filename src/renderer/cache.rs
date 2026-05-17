@@ -125,9 +125,15 @@ impl CardCache {
                 };
 
                 // check if webp or not, also allow ttf for now.
-                if file_bytes.len() < 12 || &file_bytes[0..4] != b"RIFF" || &file_bytes[8..12] != b"WEBP" {
+                if file_bytes.len() < 12
+                    || &file_bytes[0..4] != b"RIFF"
+                    || &file_bytes[8..12] != b"WEBP"
+                {
                     if path.extension().is_none_or(|e| e != "ttf") {
-                        log::warn!("file '{}' is not a valid webp image.. skipping decoding!", path.display());
+                        log::warn!(
+                            "file '{}' is not a valid webp image.. skipping decoding!",
+                            path.display()
+                        );
                     }
                     continue;
                 }
@@ -135,16 +141,13 @@ impl CardCache {
                 let memory = memory.clone();
                 let warmed = warmed.clone();
                 let warmed_kb = warmed_kb.clone();
-                let permit = semaphore.clone().acquire_owned().await.expect("semaphore unexpectedly closed");
+                let permit =
+                    semaphore.clone().acquire_owned().await.expect("semaphore unexpectedly closed");
 
                 spawn(async move {
                     let result = task::spawn_blocking(move || {
                         if let Ok((pixels, width, height)) = decode_rgba(&file_bytes) {
-                            Some(Arc::new(RawCardImage {
-                                width,
-                                height,
-                                pixels,
-                            }))
+                            Some(Arc::new(RawCardImage { width, height, pixels }))
                         } else {
                             None
                         }
@@ -204,15 +207,18 @@ impl CardCache {
         self.memory
             .try_get_with(name_arc, async move {
                 let file_bytes = tokio_fs::read(&path).await.map_err(|e| {
-                    RenderError::Internal(format!(
-                        "failed to open file '{}': {e}",
-                        path.display()
-                    ))
+                    RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
                 })?;
 
                 // reject non webp file
-                if file_bytes.len() < 12 || &file_bytes[0..4] != b"RIFF" || &file_bytes[8..12] != b"WEBP" {
-                    log::warn!("sumi rejected file '{}' because its not a webp image..", path.display());
+                if file_bytes.len() < 12
+                    || &file_bytes[0..4] != b"RIFF"
+                    || &file_bytes[8..12] != b"WEBP"
+                {
+                    log::warn!(
+                        "sumi rejected file '{}' because its not a webp image..",
+                        path.display()
+                    );
                     return Err(RenderError::Internal(format!(
                         "file '{}' is not a webp file",
                         path.display()

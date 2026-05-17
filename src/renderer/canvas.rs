@@ -1,11 +1,12 @@
-use bytes::Bytes;
-use fontdue::{Font, FontSettings};
-use itoa::Buffer as ItoaBuffer;
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     sync::LazyLock,
     time::Instant,
 };
+
+use bytes::Bytes;
+use fontdue::{Font, FontSettings};
+use itoa::Buffer as ItoaBuffer;
 
 use crate::renderer::{encoding::encode_webp, error::RenderError};
 
@@ -51,8 +52,8 @@ struct LetterSet {
 // -- Load font sekali doang
 static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
     let font_data = include_bytes!("../../assets/LexendDeca-Bold.ttf") as &[u8];
-    let font = Font::from_bytes(font_data, FontSettings::default())
-        .expect("could not load font file");
+    let font =
+        Font::from_bytes(font_data, FontSettings::default()).expect("could not load font file");
     let metrics = font.horizontal_line_metrics(TEXT_SIZE).unwrap();
     let ascent = metrics.ascent;
 
@@ -139,8 +140,7 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
             let canvas_pixel_start =
                 ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
-            let letter_pixel_start =
-                (draw_y_offset * letter_width + draw_x_start) as usize;
+            let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
 
             let count = (draw_x_end - draw_x_start) as usize;
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
@@ -199,7 +199,7 @@ fn copy_card_pixels(
     }
 }
 
-fn format_print_num<'a>(print_num: u32, buf: &'a mut [u8; 16]) -> &'a [u8] {
+fn format_print_num(print_num: u32, buf: &mut [u8; 16]) -> &[u8] {
     let mut itoa_buf = ItoaBuffer::new();
     let num_str = itoa_buf.format(print_num);
     buf[0] = b'#';
