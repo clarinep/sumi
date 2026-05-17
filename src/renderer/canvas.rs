@@ -135,7 +135,8 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             }
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            let canvas_pixel_start = ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
+            let canvas_pixel_start =
+                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
             let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
 
             let count = (draw_x_end - draw_x_start) as usize;
