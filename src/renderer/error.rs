@@ -1,3 +1,8 @@
+use std::{
+    error::Error,
+    fmt::{Display, Formatter, Result as FmtResult},
+};
+
 #[derive(Debug, Clone)]
 pub enum RenderError {
     CardNotFound(String),
@@ -6,8 +11,8 @@ pub enum RenderError {
     EncodeError(String),
 }
 
-impl std::fmt::Display for RenderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for RenderError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::CardNotFound(s) => write!(f, "card img not found: {s}"),
             Self::Timeout => write!(f, "render timed out"),
@@ -17,4 +22,4 @@ impl std::fmt::Display for RenderError {
     }
 }
 
-impl std::error::Error for RenderError {}
+impl Error for RenderError {}
