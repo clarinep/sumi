@@ -1,6 +1,13 @@
-use std::sync::LazyLock;
+use bytes::Bytes;
+use fontdue::{Font, FontSettings};
+use itoa::Buffer as ItoaBuffer;
+use std::{
+    fmt::{Debug, Formatter, Result as FmtResult},
+    sync::LazyLock,
+    time::Instant,
+};
 
-use crate::renderer::error::RenderError;
+use crate::renderer::{encoding::encode_webp, error::RenderError};
 
 /// raw uncompressed rgba image
 /// this will act as a container that will replace our previous `image::RgbaImage`.
@@ -10,8 +17,8 @@ pub struct RawCardImage {
     pub pixels: Vec<u8>,
 }
 
-impl std::fmt::Debug for RawCardImage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for RawCardImage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("RawCardImage")
             .field("width", &self.width)
             .field("height", &self.height)
@@ -44,7 +51,7 @@ struct LetterSet {
 // -- Load font sekali doang
 static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
     let font_data = include_bytes!("../../assets/LexendDeca-Bold.ttf") as &[u8];
-    let font = fontdue::Font::from_bytes(font_data, fontdue::FontSettings::default())
+    let font = Font::from_bytes(font_data, FontSettings::default())
         .expect("could not load font file");
     let metrics = font.horizontal_line_metrics(TEXT_SIZE).unwrap();
     let ascent = metrics.ascent;
@@ -86,11 +93,10 @@ pub fn init_font() {
 /// we do this manually instead of using a image processing library
 /// because it is a bitty faster and avoids useless overhead.
 /// we are simply manipulating the byte array for some tiny peformance gain
-#[inline]
 #[allow(clippy::many_single_char_names)]
 fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
-    let canvas_width: i32 = canvas.width.try_into().unwrap();
-    let canvas_height: i32 = canvas.height.try_into().unwrap();
+    let canvas_width = canvas.width as i32;
+    let canvas_height = canvas.height as i32;
     let canvas_buf = &mut canvas.pixels;
 
     for &b in text {
@@ -102,9 +108,9 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             _ => continue,
         };
 
-        // pre-cast letter dimensions once
-        let letter_width: i32 = letter.width.try_into().unwrap();
-        let letter_height: i32 = letter.height.try_into().unwrap();
+        // pre cast letter w h to i32 to avoid repeated casting
+        let letter_width = letter.width as i32;
+        let letter_height = letter.height as i32;
 
         // count the starting x and y coords for letter on the canvas
         let draw_y = y + letter.offset_y;
@@ -131,14 +137,12 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             }
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            let canvas_pixel_start: usize =
-                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4)
-                    .try_into()
-                    .unwrap();
-            let letter_pixel_start: usize =
-                (draw_y_offset * letter_width + draw_x_start).try_into().unwrap();
+            let canvas_pixel_start =
+                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
+            let letter_pixel_start =
+                (draw_y_offset * letter_width + draw_x_start) as usize;
 
-            let count: usize = (draw_x_end - draw_x_start).try_into().unwrap();
+            let count = (draw_x_end - draw_x_start) as usize;
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
             let glyph_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
 
@@ -173,26 +177,53 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
     }
 }
 
+fn copy_card_pixels(
+    buffer: &mut [u8],
+    card: &RawCardImage,
+    total_width: u32,
+    start_x: i32,
+    start_y: i32,
+) {
+    let card_width = card.width as usize;
+    let card_height = card.height as usize;
+    let card_row_bytes = card_width * 4;
+    let total_row_bytes = (total_width * 4) as usize;
+
+    let mut start_index = ((start_y as u32 * total_width + start_x as u32) * 4) as usize;
+
+    for row in 0..card_height {
+        let card_start = row * card_row_bytes;
+        buffer[start_index..start_index + card_row_bytes]
+            .copy_from_slice(&card.pixels[card_start..card_start + card_row_bytes]);
+        start_index += total_row_bytes;
+    }
+}
+
+fn format_print_num<'a>(print_num: u32, buf: &'a mut [u8; 16]) -> &'a [u8] {
+    let mut itoa_buf = ItoaBuffer::new();
+    let num_str = itoa_buf.format(print_num);
+    buf[0] = b'#';
+    buf[1..=num_str.len()].copy_from_slice(num_str.as_bytes());
+    &buf[..=num_str.len()]
+}
+
 /// combine two card images and add print numbers = drop image
-/// we use `thread_local` buffer to make drop image, manually copying
-/// pixel rows from the card images. this is much faster than creating a new
-/// blank image and using a library to paste the card images to it.
+/// we manually copy pixel rows from the card images. this is much faster
+/// than creating a new blank image and using a library to paste the card images to it.
 pub fn create_drop_image(
     left_card: &RawCardImage,
     right_card: &RawCardImage,
     left_card_print: u32,
     right_card_print: u32,
-) -> Result<bytes::Bytes, RenderError> {
-    let start_canvas = std::time::Instant::now();
+) -> Result<Bytes, RenderError> {
+    let start_canvas = Instant::now();
 
     // count the dimensions of our drop image
     let left_width = left_card.width;
-    let left_height = left_card.height;
     let right_width = right_card.width;
-    let right_height = right_card.height;
 
     let total_width = left_width + right_width + (PADDING_BETWEEN_CARDS as u32) * 3;
-    let max_card_height = left_height.max(right_height);
+    let max_card_height = left_card.height.max(right_card.height);
     let total_height = max_card_height + (PADDING_BETWEEN_CARDS as u32) * 2;
 
     // make sure buffer big enough for image (width * height * 4 bytes per pixel).
@@ -203,82 +234,40 @@ pub fn create_drop_image(
     let mut buffer: Vec<u8> = vec![0; required_len];
 
     // count starting position for the left and right card.
-    let left_card_position = PADDING_BETWEEN_CARDS as u32;
-    let right_card_position = left_width + (PADDING_BETWEEN_CARDS as u32) * 2;
-    let card_vertical_position = PADDING_BETWEEN_CARDS as u32;
+    let left_card_x = PADDING_BETWEEN_CARDS;
+    let right_card_x = left_width as i32 + PADDING_BETWEEN_CARDS * 2;
+    let card_y = PADDING_BETWEEN_CARDS;
 
-    // count number of bytes per row for each card
-    let left_row_bytes = (left_width * 4) as usize;
-    let right_row_bytes = (right_width * 4) as usize;
-    let total_row_bytes = (total_width * 4) as usize;
-
-    // copy pixels from left card into buffer.
-    // we do this row by row so its correctly placed in the canvas
-    let left_pixels = &left_card.pixels;
-    let mut card_start_index = 0;
-    let mut canvas_start_index =
-        ((card_vertical_position * total_width + left_card_position) * 4) as usize;
-    for _ in 0..left_height {
-        buffer[canvas_start_index..canvas_start_index + left_row_bytes]
-            .copy_from_slice(&left_pixels[card_start_index..card_start_index + left_row_bytes]);
-        card_start_index += left_row_bytes;
-        canvas_start_index += total_row_bytes;
-    }
-
-    // copy pixels from right card into buffer
-    let right_pixels = &right_card.pixels;
-    let mut card_start_index = 0;
-    let mut canvas_start_index =
-        ((card_vertical_position * total_width + right_card_position) * 4) as usize;
-    for _ in 0..right_height {
-        buffer[canvas_start_index..canvas_start_index + right_row_bytes]
-            .copy_from_slice(&right_pixels[card_start_index..card_start_index + right_row_bytes]);
-        card_start_index += right_row_bytes;
-        canvas_start_index += total_row_bytes;
-    }
+    // copy pixels from left and right card into buffer.
+    copy_card_pixels(&mut buffer, left_card, total_width, left_card_x, card_y);
+    copy_card_pixels(&mut buffer, right_card, total_width, right_card_x, card_y);
 
     // wrap the buffer into RawCardImage so we can pass it to the encoder etc
-    // we fully consume the buffer here
     let mut final_image = RawCardImage { width: total_width, height: total_height, pixels: buffer };
 
     // format print numbers into string
-    // a bit overengineered but we use itoa instead of normal format!()
-    // -- itoa juga dipakai di segala crate jadi lebih mending diimplementasi
-    // -- bedanya cuman format!() lebih simple dibaca
-    let mut itoa_buf = itoa::Buffer::new();
-    let left_num_str = itoa_buf.format(left_card_print);
     let mut left_text_buf = [0u8; 16];
-    left_text_buf[0] = b'#';
-    left_text_buf[1..=left_num_str.len()].copy_from_slice(left_num_str.as_bytes());
-    let left_text = &left_text_buf[..=left_num_str.len()];
+    let left_text = format_print_num(left_card_print, &mut left_text_buf);
 
-    let right_num_str = itoa_buf.format(right_card_print);
     let mut right_text_buf = [0u8; 16];
-    right_text_buf[0] = b'#';
-    right_text_buf[1..=right_num_str.len()].copy_from_slice(right_num_str.as_bytes());
-    let right_text = &right_text_buf[..=right_num_str.len()];
+    let right_text = format_print_num(right_card_print, &mut right_text_buf);
 
     let canvas_time = start_canvas.elapsed();
 
-    let start_text = std::time::Instant::now();
+    let start_text = Instant::now();
     // count positions for text and draw it to the image
-    let left_text_x: i32 = i32::try_from(left_card_position).unwrap()
-        + i32::try_from(left_width).unwrap()
-        - TEXT_PADDING_FROM_EDGE;
-    let right_text_x: i32 = i32::try_from(right_card_position).unwrap()
-        + i32::try_from(right_width).unwrap()
-        - TEXT_PADDING_FROM_EDGE;
-    let text_y: i32 =
-        i32::try_from(total_height).unwrap() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    let left_text_x = left_card_x + left_width as i32 - TEXT_PADDING_FROM_EDGE;
+    let right_text_x = right_card_x + right_width as i32 - TEXT_PADDING_FROM_EDGE;
+    let text_y = total_height as i32 - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
     draw_text(&mut final_image, left_text, left_text_x, text_y);
     draw_text(&mut final_image, right_text, right_text_x, text_y);
 
     let text_time = start_text.elapsed();
 
-    let start_encode = std::time::Instant::now();
+    let start_encode = Instant::now();
     // encode final drop image to webp
-    let result = super::encoding::encode_webp(&final_image);
+    let result = encode_webp(&final_image);
     let encode_time = start_encode.elapsed();
 
     log::debug!(
