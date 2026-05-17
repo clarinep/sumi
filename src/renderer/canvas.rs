@@ -141,7 +141,9 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
             let canvas_pixel_start =
-                usize::try_from(canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)).unwrap_or(0) * 4;
+                usize::try_from(canvas_y * canvas_width + (x + letter.offset_x + draw_x_start))
+                    .unwrap_or(0)
+                    * 4;
             let letter_pixel_start =
                 usize::try_from(draw_y_offset * letter_width + draw_x_start).unwrap_or(0);
 
@@ -260,8 +262,10 @@ pub fn create_drop_image(
     let start_text = Instant::now();
     // count positions for text and draw it to the image
     let left_text_x = i32::try_from(left_card_x + left_width).unwrap_or(0) - TEXT_PADDING_FROM_EDGE;
-    let right_text_x = i32::try_from(right_card_x + right_width).unwrap_or(0) - TEXT_PADDING_FROM_EDGE;
-    let text_y = i32::try_from(total_height).unwrap_or(0) - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    let right_text_x =
+        i32::try_from(right_card_x + right_width).unwrap_or(0) - TEXT_PADDING_FROM_EDGE;
+    let text_y =
+        i32::try_from(total_height).unwrap_or(0) - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
     draw_text(&mut final_image, left_text, left_text_x, text_y);
     draw_text(&mut final_image, right_text, right_text_x, text_y);
