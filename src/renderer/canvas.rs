@@ -6,7 +6,6 @@ use std::{
 
 use bytes::Bytes;
 use fontdue::{Font, FontSettings};
-use itoa::Buffer as ItoaBuffer;
 
 use crate::renderer::{encoding::encode_webp, error::RenderError};
 
@@ -204,14 +203,6 @@ fn copy_card_pixels(
     }
 }
 
-fn format_print_num(print_num: u32, buf: &mut [u8; 16]) -> &[u8] {
-    let mut itoa_buf = ItoaBuffer::new();
-    let num_str = itoa_buf.format(print_num);
-    buf[0] = b'#';
-    buf[1..=num_str.len()].copy_from_slice(num_str.as_bytes());
-    &buf[..=num_str.len()]
-}
-
 /// combine two card images and add print numbers = drop image
 /// we manually copy pixel rows from the card images. this is much faster
 /// than creating a new blank image and using a library to paste the card images to it.
@@ -250,12 +241,8 @@ pub fn create_drop_image(
     // wrap the buffer into RawCardImage so we can pass it to the encoder etc
     let mut final_image = RawCardImage { width: total_width, height: total_height, pixels: buffer };
 
-    // format print numbers into string
-    let mut left_text_buf = [0u8; 16];
-    let left_text = format_print_num(left_card_print, &mut left_text_buf);
-
-    let mut right_text_buf = [0u8; 16];
-    let right_text = format_print_num(right_card_print, &mut right_text_buf);
+    let left_text = format!("#{left_card_print}");
+    let right_text = format!("#{right_card_print}");
 
     let canvas_time = start_canvas.elapsed();
 
@@ -267,8 +254,8 @@ pub fn create_drop_image(
     let text_y =
         i32::try_from(total_height).unwrap_or(0) - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_text(&mut final_image, left_text, left_text_x, text_y);
-    draw_text(&mut final_image, right_text, right_text_x, text_y);
+    draw_text(&mut final_image, left_text.as_bytes(), left_text_x, text_y);
+    draw_text(&mut final_image, right_text.as_bytes(), right_text_x, text_y);
 
     let text_time = start_text.elapsed();
 
