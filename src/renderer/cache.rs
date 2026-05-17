@@ -37,7 +37,7 @@ pub struct CacheStats {
 /// hold cached image and list of file here
 pub struct CardCache {
     memory: Cache<Arc<str>, Arc<RawCardImage>>,
-    file_index: HashMap<Arc<str>, PathBuf>,
+    file_index: Arc<HashMap<Arc<str>, PathBuf>>,
     pub stats: CacheStats,
 }
 
@@ -53,7 +53,7 @@ impl Debug for CardCache {
 
 impl CardCache {
     /// sets up the cache and finds all images
-    pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self, &'static str> {
+    pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self, RenderError> {
         let cache = Cache::builder()
             .max_capacity(MAX_CACHE_SIZE_KB)
             .weigher(|_key, value: &Arc<RawCardImage>| -> u32 {
@@ -65,12 +65,12 @@ impl CardCache {
         let file_index = Self::build_card_list(cards_directory.as_ref());
 
         if file_index.is_empty() {
-            return Err("found literally zero cards in the folder.. sumi is refusing to wake up");
+            return Err(RenderError::Internal("found literally zero cards in the folder.. sumi is refusing to wake up".to_string()));
         }
 
         log::info!("found {} card images on disk", file_index.len());
 
-        Ok(Self { memory: cache, file_index, stats: CacheStats::default() })
+        Ok(Self { memory: cache, file_index: Arc::new(file_index), stats: CacheStats::default() })
     }
 
     /// makes a list of all image files in the folder
@@ -97,7 +97,7 @@ impl CardCache {
         index
     }
 
-    pub fn start_prewarm(self: &Arc<Self>) {
+    pub fn start_prewarm(&self) {
         if self.file_index.is_empty() {
             return;
         }
@@ -146,11 +146,9 @@ impl CardCache {
 
                 spawn(async move {
                     let result = task::spawn_blocking(move || {
-                        if let Ok((pixels, width, height)) = decode_rgba(&file_bytes) {
-                            Some(Arc::new(RawCardImage { width, height, pixels }))
-                        } else {
-                            None
-                        }
+                        decode_rgba(&file_bytes).ok().map(|(pixels, width, height)| {
+                            Arc::new(RawCardImage { width, height, pixels })
+                        })
                     })
                     .await
                     .unwrap_or(None);
