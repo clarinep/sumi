@@ -3,55 +3,74 @@ pub mod canvas;
 pub mod encoding;
 pub mod error;
 
+use bytes::Bytes;
+use cache::CardCache;
+use canvas::{create_drop_image, init_font};
+use error::RenderError;
 use std::{
-    sync::Arc,
+    num::NonZero,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    thread,
     time::{Duration, Instant},
 };
-
-use error::RenderError;
-use tokio::time::timeout;
+use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 const TIMEOUT_SECONDS: u64 = 10;
 
 /// simple counter to keep track of how sumi is doing.
 #[derive(Default, Debug)]
 pub struct RequestStats {
-    pub total_requests: std::sync::atomic::AtomicU64,
-    pub failed_requests: std::sync::atomic::AtomicU64,
+    pub total_requests: AtomicU64,
+    pub failed_requests: AtomicU64,
 }
 
 impl RequestStats {
     /// saves details of a single request after it finishes
     /// this updates our running totals safely across multiple threads.
-    #[inline]
     pub fn record(&self, did_fail: bool) {
-        self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.total_requests.fetch_add(1, Ordering::Relaxed);
         if did_fail {
-            self.failed_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.failed_requests.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CardRenderer {
-    pub card_cache: Arc<cache::CardCache>,
+    pub card_cache: Arc<CardCache>,
     pub stats: Arc<RequestStats>,
     pub start_time: Instant,
-    cpu_semaphore: Arc<tokio::sync::Semaphore>,
+    cpu_semaphore: Arc<Semaphore>,
+    total_permits: usize,
 }
 
 impl CardRenderer {
-    pub fn new(cards_directory: impl Into<std::path::PathBuf>) -> Result<Self, &'static str> {
-        let cores = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
+    pub fn new(cards_directory: impl Into<PathBuf>) -> Result<Self, &'static str> {
+        let cores = thread::available_parallelism().map_or(4, NonZero::get);
         log::info!("sumi found {cores} cpu cores");
-        canvas::init_font();
+        init_font();
 
         Ok(Self {
-            card_cache: Arc::new(cache::CardCache::new(cards_directory.into())?),
+            card_cache: Arc::new(CardCache::new(cards_directory.into())?),
             stats: Arc::new(RequestStats::default()),
             start_time: Instant::now(),
-            cpu_semaphore: Arc::new(tokio::sync::Semaphore::new(cores)),
+            cpu_semaphore: Arc::new(Semaphore::new(cores)),
+            total_permits: cores,
         })
+    }
+
+    /// wait for all background workers to finish
+    pub async fn wait_for_tasks_to_finish(&self) {
+        let active_tasks = self.total_permits.saturating_sub(self.cpu_semaphore.available_permits());
+        if active_tasks > 0 {
+            log::info!("waiting for {} tasks to drain...", active_tasks);
+        }
+        let _ = self.cpu_semaphore.acquire_many(self.total_permits as u32).await;
+        log::info!("all tasks cleared!");
     }
 
     /// creates the final image.
@@ -63,10 +82,10 @@ impl CardRenderer {
         right_card_name: &str,
         left_print_number: u32,
         right_print_number: u32,
-    ) -> Result<bytes::Bytes, RenderError> {
+    ) -> Result<Bytes, RenderError> {
         let render_future = async {
-            let start_fetch = std::time::Instant::now();
-            let (left_card, right_card) = tokio::try_join!(
+            let start_fetch = Instant::now();
+            let (left_card, right_card) = try_join!(
                 self.card_cache.get_card(left_card_name),
                 self.card_cache.get_card(right_card_name)
             )?;
@@ -83,9 +102,9 @@ impl CardRenderer {
                 .expect("cpu semaphore closed unexpectedly");
 
             // move the heavy image work to a background thread
-            let result = tokio::task::spawn_blocking(move || {
+            let result = task::spawn_blocking(move || {
                 let _lock = permit;
-                canvas::create_drop_image(
+                create_drop_image(
                     &left_card,
                     &right_card,
                     left_print_number,
