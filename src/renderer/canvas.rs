@@ -30,7 +30,7 @@ impl Debug for RawCardImage {
 
 const TEXT_SIZE: f32 = 60.0;
 const TEXT_PADDING_FROM_EDGE: i32 = 190;
-const PADDING_BETWEEN_CARDS: i32 = 20;
+const PADDING_BETWEEN_CARDS: u32 = 20;
 const TEXT_PADDING_FROM_BOTTOM: i32 = 80;
 
 // normal font lib takes a while to render a letter.
@@ -59,10 +59,12 @@ static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
 
     let render_char = |c: char| -> Letter {
         let (metrics, coverage) = font.rasterize(c, TEXT_SIZE);
+        let metric_width = u32::try_from(metrics.width).unwrap_or(0);
+        let metric_height = u32::try_from(metrics.height).unwrap_or(0);
         Letter {
             coverage,
-            width: metrics.width as u32,
-            height: metrics.height as u32,
+            width: metric_width,
+            height: metric_height,
             advance_width: metrics.advance_width.round() as i32,
             offset_x: metrics.xmin,
             offset_y: (ascent - metrics.ymin as f32 - metrics.height as f32).round() as i32,
@@ -96,8 +98,8 @@ pub fn init_font() {
 /// we are simply manipulating the byte array for some tiny peformance gain
 #[allow(clippy::many_single_char_names)]
 fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
-    let canvas_width = canvas.width as i32;
-    let canvas_height = canvas.height as i32;
+    let canvas_width = i32::try_from(canvas.width).unwrap_or(0);
+    let canvas_height = i32::try_from(canvas.height).unwrap_or(0);
     let canvas_buf = &mut canvas.pixels;
 
     for &b in text {
@@ -110,8 +112,8 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
         };
 
         // pre cast letter w h to i32 to avoid repeated casting
-        let letter_width = letter.width as i32;
-        let letter_height = letter.height as i32;
+        let letter_width = i32::try_from(letter.width).unwrap_or(0);
+        let letter_height = i32::try_from(letter.height).unwrap_or(0);
 
         // count the starting x and y coords for letter on the canvas
         let draw_y = y + letter.offset_y;
@@ -139,10 +141,11 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
             let canvas_pixel_start =
-                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
-            let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
+                usize::try_from(canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)).unwrap_or(0) * 4;
+            let letter_pixel_start =
+                usize::try_from(draw_y_offset * letter_width + draw_x_start).unwrap_or(0);
 
-            let count = (draw_x_end - draw_x_start) as usize;
+            let count = usize::try_from(draw_x_end - draw_x_start).unwrap_or(0);
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
             let glyph_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
 
@@ -181,15 +184,15 @@ fn copy_card_pixels(
     buffer: &mut [u8],
     card: &RawCardImage,
     total_width: u32,
-    start_x: i32,
-    start_y: i32,
+    start_x: u32,
+    start_y: u32,
 ) {
     let card_width = card.width as usize;
     let card_height = card.height as usize;
     let card_row_bytes = card_width * 4;
     let total_row_bytes = (total_width * 4) as usize;
 
-    let mut start_index = ((start_y as u32 * total_width + start_x as u32) * 4) as usize;
+    let mut start_index = ((start_y * total_width + start_x) * 4) as usize;
 
     for row in 0..card_height {
         let card_start = row * card_row_bytes;
@@ -222,9 +225,9 @@ pub fn create_drop_image(
     let left_width = left_card.width;
     let right_width = right_card.width;
 
-    let total_width = left_width + right_width + (PADDING_BETWEEN_CARDS as u32) * 3;
+    let total_width = left_width + right_width + PADDING_BETWEEN_CARDS * 3;
     let max_card_height = left_card.height.max(right_card.height);
-    let total_height = max_card_height + (PADDING_BETWEEN_CARDS as u32) * 2;
+    let total_height = max_card_height + PADDING_BETWEEN_CARDS * 2;
 
     // make sure buffer big enough for image (width * height * 4 bytes per pixel).
     let required_len = (total_width * total_height * 4) as usize;
@@ -235,7 +238,7 @@ pub fn create_drop_image(
 
     // count starting position for the left and right card.
     let left_card_x = PADDING_BETWEEN_CARDS;
-    let right_card_x = left_width as i32 + PADDING_BETWEEN_CARDS * 2;
+    let right_card_x = left_width + PADDING_BETWEEN_CARDS * 2;
     let card_y = PADDING_BETWEEN_CARDS;
 
     // copy pixels from left and right card into buffer.
@@ -256,9 +259,9 @@ pub fn create_drop_image(
 
     let start_text = Instant::now();
     // count positions for text and draw it to the image
-    let left_text_x = left_card_x + left_width as i32 - TEXT_PADDING_FROM_EDGE;
-    let right_text_x = right_card_x + right_width as i32 - TEXT_PADDING_FROM_EDGE;
-    let text_y = total_height as i32 - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    let left_text_x = i32::try_from(left_card_x + left_width).unwrap_or(0) - TEXT_PADDING_FROM_EDGE;
+    let right_text_x = i32::try_from(right_card_x + right_width).unwrap_or(0) - TEXT_PADDING_FROM_EDGE;
+    let text_y = i32::try_from(total_height).unwrap_or(0) - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
     draw_text(&mut final_image, left_text, left_text_x, text_y);
     draw_text(&mut final_image, right_text, right_text_x, text_y);
