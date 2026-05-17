@@ -1,0 +1,61 @@
+name: Test generate drop image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install rust
+      run: rustup toolchain install nightly
+
+    - name: Build sumi
+      run: cargo +nightly build --release
+
+    - name: Start sumi server
+      env:
+        CARDS_DIR: "assets"
+        PORT: 3000
+        RUST_LOG: debug
+      run: |
+        cargo +nightly run --release > sumi.log 2>&1 &
+        echo $! > sumi.pid
+        sleep 5 
+
+    - name: Request random drop
+      run: |
+        mkdir -p generated
+        CARDS=($(find assets -type f \( -name "*.webp" \) | sed 's|assets/||' | sed 's|\.webp||' | sed 's|\.png||'))
+        
+        if [ ${#CARDS[@]} -eq 0 ]; then
+          echo "Error: No cards (.webp) found in the assets folder."
+          exit 1
+        fi
+        
+        CARD1=${CARDS[$((RANDOM % ${#CARDS[@]}))]}
+        CARD2=${CARDS[$((RANDOM % ${#CARDS[@]}))]}
+        PRINT1=$((1 + RANDOM % 99))
+        PRINT2=$((1 + RANDOM % 99))
+        FILENAME="drop_$(date +%s).webp"
+        curl -s -f -o "generated/$FILENAME" "http://localhost:3000/render/drop?left=$CARD1&right=$CARD2&left_print=$PRINT1&right_print=$PRINT2"
+        
+        echo "image rendered and saved to generated/$FILENAME"
+
+    - name: Stop sumi server
+      run: |
+        if [ -f sumi.pid ]; then
+          kill $(cat sumi.pid) || true
+        fi
+
+    - name: Commit and push image to repo
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "chore: test generated drop image"
+        file_pattern: 'generated/*.webp'
