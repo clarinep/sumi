@@ -126,12 +126,8 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             }
 
             // count and make sure we dont draw outside canvas
-            let draw_x_start = if x + letter.offset_x < 0 { -(x + letter.offset_x) } else { 0 };
-            let draw_x_end = if x + letter.offset_x + letter_width > canvas_width {
-                canvas_width - (x + letter.offset_x)
-            } else {
-                letter_width
-            };
+            let draw_x_start = 0.max(-(x + letter.offset_x));
+            let draw_x_end = letter_width.min(canvas_width - (x + letter.offset_x));
 
             // skip if the letter horizontally is outside canvas
             if draw_x_start >= draw_x_end {
@@ -152,10 +148,7 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
 
             for (pixel, &coverage) in target_pixels.chunks_exact_mut(4).zip(glyph_row) {
                 if coverage == 255 {
-                    pixel[0] = 255;
-                    pixel[1] = 255;
-                    pixel[2] = 255;
-                    pixel[3] = 255;
+                    pixel.copy_from_slice(&[255, 255, 255, 255]);
                 } else if coverage > 0 {
                     let alpha = u32::from(coverage);
                     let inv_alpha = 255 - alpha;
@@ -188,18 +181,15 @@ fn copy_card_pixels(
     start_x: u32,
     start_y: u32,
 ) {
-    let card_width = card.width as usize;
-    let card_height = card.height as usize;
-    let card_row_bytes = card_width * 4;
+    let card_row_bytes = (card.width * 4) as usize;
     let total_row_bytes = (total_width * 4) as usize;
+    let start_index = ((start_y * total_width + start_x) * 4) as usize;
 
-    let mut start_index = ((start_y * total_width + start_x) * 4) as usize;
+    let dest_rows = buffer[start_index..].chunks_mut(total_row_bytes);
+    let src_rows = card.pixels.chunks(card_row_bytes);
 
-    for row in 0..card_height {
-        let card_start = row * card_row_bytes;
-        buffer[start_index..start_index + card_row_bytes]
-            .copy_from_slice(&card.pixels[card_start..card_start + card_row_bytes]);
-        start_index += total_row_bytes;
+    for (dest_row, src_row) in dest_rows.zip(src_rows).take(card.height as usize) {
+        dest_row[..card_row_bytes].copy_from_slice(src_row);
     }
 }
 
