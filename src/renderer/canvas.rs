@@ -237,7 +237,7 @@ pub fn create_drop_image(
 
     let left_text_str = format!("#{left_card_print}");
     let left_text = left_text_str.as_bytes();
-   
+
     let right_text_str = format!("#{right_card_print}");
     let right_text = right_text_str.as_bytes();
 
@@ -255,7 +255,7 @@ pub fn create_drop_image(
     let text_time = start_text.elapsed();
 
     let start_encode = Instant::now();
- 
+
     // encode final drop image to webp
     let result = encode_webp(&final_image);
     let encode_time = start_encode.elapsed();
