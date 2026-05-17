@@ -112,7 +112,8 @@ impl CardCache {
             let warmed_kb = Arc::new(AtomicU64::new(0));
             let semaphore = Arc::new(Semaphore::new(8));
 
-            for (name, path) in file_index_clone {
+            for (name, path) in file_index_clone.iter() {
+                let name = name.clone();
                 // check if we reached 90% cap
                 let current_kb = warmed_kb.load(Ordering::Relaxed);
                 if current_kb > (MAX_CACHE_SIZE_KB * 9 / 10) {
