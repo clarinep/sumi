@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .route("/health", get(|| async { "OK" }))
                 .route("/metrics", get(handle_metrics))
                 .route("/render/drop", get(handle_render_drop))
-                .with_state(state);
+                .with_state(state.clone());
 
             let addr = SocketAddr::from(([127, 0, 0, 1], cfg.port));
             let listener = TcpListener::bind(addr).await?;
@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             serve(listener, app).with_graceful_shutdown(shutdown()).await?;
 
-            log::info!("draining background tasks...");
+            log::info!("sumi is draining tasks, please wait..");
             state.wait_for_tasks_to_finish().await;
 
             Ok(())
@@ -65,5 +65,5 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 async fn shutdown() {
     signal::ctrl_c().await.expect("ctrl+c");
-    log::info!("gracefully shutting down, stopping incoming requests...");
+    log::info!("you gave sumi way too much caffeine..");
 }
