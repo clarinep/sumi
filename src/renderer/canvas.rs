@@ -136,7 +136,8 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             }
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            let canvas_pixel_start = ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
+            let canvas_pixel_start =
+                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
             let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
 
             let count = (draw_x_end - draw_x_start) as usize;
@@ -225,7 +226,11 @@ pub fn create_drop_image(
     copy_card_pixels(&mut buffer, right_card, total_width, right_card_x, card_y);
 
     // wrap the buffer into RawCardImage so we can pass it to the encoder etc
-    let mut final_image = RawCardImage { width: total_width, height: total_height, pixels: buffer.into_boxed_slice() };
+    let mut final_image = RawCardImage {
+        width: total_width,
+        height: total_height,
+        pixels: buffer.into_boxed_slice(),
+    };
 
     let left_text_str = format!("#{left_card_print}");
     let left_text = left_text_str.as_bytes();

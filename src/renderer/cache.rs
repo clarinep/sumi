@@ -59,7 +59,10 @@ impl CardCache {
         let file_index = Self::build_card_list(cards_directory.as_ref());
 
         if file_index.is_empty() {
-            return Err(RenderError::Internal("found literally zero cards in the folder.. sumi is refusing to wake up".to_string()));
+            return Err(RenderError::Internal(
+                "found literally zero cards in the folder.. sumi is refusing to wake up"
+                    .to_string(),
+            ));
         }
 
         log::info!("found {} card images on disk", file_index.len());
@@ -139,7 +142,11 @@ impl CardCache {
                 spawn(async move {
                     let result = task::spawn_blocking(move || {
                         decode_rgba(&file_bytes).ok().map(|(pixels, width, height)| {
-                            Arc::new(RawCardImage { width, height, pixels: pixels.into_boxed_slice() })
+                            Arc::new(RawCardImage {
+                                width,
+                                height,
+                                pixels: pixels.into_boxed_slice(),
+                            })
                         })
                     })
                     .await
