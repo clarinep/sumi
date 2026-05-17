@@ -23,15 +23,9 @@ use crate::renderer::{canvas::RawCardImage, error::RenderError};
 const MAX_CACHE_SIZE_KB: u64 = 1_000_000; // -- 1 GB limit di kilobyte
 
 #[derive(Default, Debug)]
-#[repr(align(128))]
-pub struct CachePadded<T> {
-    pub value: T,
-}
-
-#[derive(Default, Debug)]
 pub struct CacheStats {
-    pub hits: CachePadded<AtomicU64>,
-    pub misses: CachePadded<AtomicU64>,
+    pub hits: AtomicU64,
+    pub misses: AtomicU64,
 }
 
 /// hold cached image and list of file here
@@ -65,10 +59,7 @@ impl CardCache {
         let file_index = Self::build_card_list(cards_directory.as_ref());
 
         if file_index.is_empty() {
-            return Err(RenderError::Internal(
-                "found literally zero cards in the folder.. sumi is refusing to wake up"
-                    .to_string(),
-            ));
+            return Err(RenderError::Internal("found literally zero cards in the folder.. sumi is refusing to wake up".to_string()));
         }
 
         log::info!("found {} card images on disk", file_index.len());
@@ -129,10 +120,7 @@ impl CardCache {
                 };
 
                 // check if webp or not, also allow ttf for now.
-                if file_bytes.len() < 12
-                    || &file_bytes[0..4] != b"RIFF"
-                    || &file_bytes[8..12] != b"WEBP"
-                {
+                if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
                     if path.extension().is_none_or(|e| e != "ttf") {
                         log::warn!(
                             "file '{}' is not a valid webp image.. skipping decoding!",
@@ -180,8 +168,8 @@ impl CardCache {
         });
     }
     pub fn get_stats(&self) -> (u64, u64, f64) {
-        let hits = self.stats.hits.value.load(Ordering::Relaxed);
-        let misses = self.stats.misses.value.load(Ordering::Relaxed);
+        let hits = self.stats.hits.load(Ordering::Relaxed);
+        let misses = self.stats.misses.load(Ordering::Relaxed);
         let total = hits + misses;
         let hit_rate = if total == 0 { 0.0 } else { (hits as f64 / total as f64) * 100.0 };
         (hits, misses, hit_rate)
@@ -191,11 +179,11 @@ impl CardCache {
     /// -- Sekarang klo gak ada kartu di situ, kita load dari disk. akan lebih lemot.
     pub async fn get_card(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
         if let Some(img) = self.memory.get(name).await {
-            self.stats.hits.value.fetch_add(1, Ordering::Relaxed);
+            self.stats.hits.fetch_add(1, Ordering::Relaxed);
             return Ok(img);
         }
 
-        self.stats.misses.value.fetch_add(1, Ordering::Relaxed);
+        self.stats.misses.fetch_add(1, Ordering::Relaxed);
 
         // a check on whether file exists before trying to read it
         let path = self
@@ -213,10 +201,7 @@ impl CardCache {
                 })?;
 
                 // reject non webp file
-                if file_bytes.len() < 12
-                    || &file_bytes[0..4] != b"RIFF"
-                    || &file_bytes[8..12] != b"WEBP"
-                {
+                if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
                     log::warn!(
                         "sumi rejected file '{}' because its not a webp image..",
                         path.display()
