@@ -14,7 +14,7 @@ use crate::renderer::{encoding::encode_webp, error::RenderError};
 pub struct RawCardImage {
     pub width: u32,
     pub height: u32,
-    pub pixels: Vec<u8>,
+    pub pixels: Box<[u8]>,
 }
 
 impl Debug for RawCardImage {
@@ -95,13 +95,14 @@ pub fn init_font() {
 /// we do this manually instead of using a image processing library
 /// because it is a bitty faster and avoids useless overhead.
 /// we are simply manipulating the byte array for some tiny peformance gain
+#[inline]
 #[allow(clippy::many_single_char_names)]
 fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
     let canvas_width = canvas.width as i32;
     let canvas_height = canvas.height as i32;
     let canvas_buf = &mut canvas.pixels;
 
-    for &b in text {
+    for b in text.iter().copied() {
         // look up the letter
         // we only support 1-9 and #
         let letter = match b {
@@ -135,8 +136,7 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             }
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            let canvas_pixel_start =
-                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
+            let canvas_pixel_start = ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
             let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
 
             let count = (draw_x_end - draw_x_start) as usize;
@@ -155,13 +155,11 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
                     let b = u32::from(pixel[2]);
                     let a = u32::from(pixel[3]);
 
-                    // divide by 256 using bitshift.
-                    // this will make it 254 instead of 255 but is mathematically much faster.
-                    // -- Fixing next version
-                    pixel[0] = (alpha + ((r * inv_alpha) >> 8)) as u8;
-                    pixel[1] = (alpha + ((g * inv_alpha) >> 8)) as u8;
-                    pixel[2] = (alpha + ((b * inv_alpha) >> 8)) as u8;
-                    pixel[3] = (alpha + ((a * inv_alpha) >> 8)) as u8;
+                    // no more bitshift
+                    pixel[0] = (alpha + (r * inv_alpha) / 255) as u8;
+                    pixel[1] = (alpha + (g * inv_alpha) / 255) as u8;
+                    pixel[2] = (alpha + (b * inv_alpha) / 255) as u8;
+                    pixel[3] = (alpha + (a * inv_alpha) / 255) as u8;
                 }
             }
         }
@@ -171,6 +169,7 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
     }
 }
 
+#[inline]
 fn copy_card_pixels(
     buffer: &mut [u8],
     card: &RawCardImage,
@@ -182,8 +181,8 @@ fn copy_card_pixels(
     let total_row_bytes = (total_width * 4) as usize;
     let start_index = ((start_y * total_width + start_x) * 4) as usize;
 
-    let dest_rows = buffer[start_index..].chunks_mut(total_row_bytes);
-    let src_rows = card.pixels.chunks(card_row_bytes);
+    let dest_rows = buffer[start_index..].chunks_exact_mut(total_row_bytes);
+    let src_rows = card.pixels.chunks_exact(card_row_bytes);
 
     for (dest_row, src_row) in dest_rows.zip(src_rows).take(card.height as usize) {
         dest_row[..card_row_bytes].copy_from_slice(src_row);
@@ -226,10 +225,13 @@ pub fn create_drop_image(
     copy_card_pixels(&mut buffer, right_card, total_width, right_card_x, card_y);
 
     // wrap the buffer into RawCardImage so we can pass it to the encoder etc
-    let mut final_image = RawCardImage { width: total_width, height: total_height, pixels: buffer };
+    let mut final_image = RawCardImage { width: total_width, height: total_height, pixels: buffer.into_boxed_slice() };
 
-    let left_text = format!("#{left_card_print}");
-    let right_text = format!("#{right_card_print}");
+    let left_text_str = format!("#{left_card_print}");
+    let left_text = left_text_str.as_bytes();
+
+    let right_text_str = format!("#{right_card_print}");
+    let right_text = right_text_str.as_bytes();
 
     let canvas_time = start_canvas.elapsed();
 
@@ -239,8 +241,8 @@ pub fn create_drop_image(
     let right_text_x = (right_card_x + right_width) as i32 - TEXT_PADDING_FROM_EDGE;
     let text_y = total_height as i32 - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_text(&mut final_image, left_text.as_bytes(), left_text_x, text_y);
-    draw_text(&mut final_image, right_text.as_bytes(), right_text_x, text_y);
+    draw_text(&mut final_image, left_text, left_text_x, text_y);
+    draw_text(&mut final_image, right_text, right_text_x, text_y);
 
     let text_time = start_text.elapsed();
 
