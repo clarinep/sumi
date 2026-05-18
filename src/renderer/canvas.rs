@@ -98,8 +98,8 @@ pub fn init_font() {
 #[inline]
 #[allow(clippy::many_single_char_names)]
 fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
-    let canvas_width = canvas.width as i32;
-    let canvas_height = canvas.height as i32;
+    let canvas_width = canvas.width.cast_signed();
+    let canvas_height = canvas.height.cast_signed();
     let canvas_buf = &mut canvas.pixels;
 
     for b in text.iter().copied() {
@@ -112,8 +112,8 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
         };
 
         // pre cast letter w h to i32 to avoid repeated casting
-        let letter_width = letter.width as i32;
-        let letter_height = letter.height as i32;
+        let letter_width = letter.width.cast_signed();
+        let letter_height = letter.height.cast_signed();
 
         // count the starting x and y coords for letter on the canvas
         let draw_y = y + letter.offset_y;
@@ -136,11 +136,14 @@ fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             }
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            let canvas_pixel_start =
-                ((canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4) as usize;
-            let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
+            let canvas_pixel_start = usize::try_from(
+                (canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4,
+            )
+            .unwrap();
+            let letter_pixel_start =
+                usize::try_from(draw_y_offset * letter_width + draw_x_start).unwrap();
 
-            let count = (draw_x_end - draw_x_start) as usize;
+            let count = usize::try_from(draw_x_end - draw_x_start).unwrap();
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
             let glyph_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
 
@@ -242,9 +245,9 @@ pub fn create_drop_image(
     let start_text = Instant::now();
 
     // count positions for text and draw it to the image
-    let left_text_x = (left_card_x + left_width) as i32 - TEXT_PADDING_FROM_EDGE;
-    let right_text_x = (right_card_x + right_width) as i32 - TEXT_PADDING_FROM_EDGE;
-    let text_y = total_height as i32 - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    let left_text_x = (left_card_x + left_width).cast_signed() - TEXT_PADDING_FROM_EDGE;
+    let right_text_x = (right_card_x + right_width).cast_signed() - TEXT_PADDING_FROM_EDGE;
+    let text_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
     draw_text(&mut final_image, left_text, left_text_x, text_y);
     draw_text(&mut final_image, right_text, right_text_x, text_y);
