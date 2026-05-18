@@ -33,8 +33,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("baking in lexend deca font..");
     init_font();
 
-    let renderer =
-        CardRenderer::new(cfg.cards_dir.clone()).expect("failed to wake sumi up..");
+    let renderer = CardRenderer::new(cfg.cards_dir.clone()).expect("failed to wake sumi up..");
     let state = Arc::new(renderer);
 
     // prewarm cache di belakang
