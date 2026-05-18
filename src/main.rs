@@ -1,3 +1,7 @@
+mod config;
+mod renderer;
+mod routes;
+
 use std::{env, error::Error, net::SocketAddr, sync::Arc};
 
 use axum::{routing::get, serve, Router};
@@ -5,7 +9,7 @@ use mimalloc::MiMalloc;
 use pretty_env_logger::init as init_logger;
 use tokio::{net::TcpListener, signal};
 
-use sumi::{
+use crate::{
     config::Config,
     renderer::{canvas::init_font, CardRenderer},
     routes::{handle_metrics, handle_render_drop},
