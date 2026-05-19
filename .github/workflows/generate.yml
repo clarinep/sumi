@@ -41,8 +41,8 @@ jobs:
         
         CARD1=${CARDS[$((RANDOM % ${#CARDS[@]}))]}
         CARD2=${CARDS[$((RANDOM % ${#CARDS[@]}))]}
-        PRINT1=$((1 + RANDOM % 999))
-        PRINT2=$((1 + RANDOM % 999))
+        PRINT1=$((1 + RANDOM % 9))
+        PRINT2=$((1 + RANDOM % 9))
         FILENAME="drop_$(date +%s).webp"
         curl -s -f -o "generated/$FILENAME" "http://localhost:3000/render/drop?left=$CARD1&right=$CARD2&left_print=$PRINT1&right_print=$PRINT2"
         
