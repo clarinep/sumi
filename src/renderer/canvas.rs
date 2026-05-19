@@ -260,14 +260,15 @@ pub fn create_drop_image(
     // count positions for text and draw it to the image
     let left_text_width = measure_text(left_text);
     let right_text_width = measure_text(right_text);
-    
+
     // We adjust it so that a 2-digit string perfectly matches the old 190 left-anchor padding.
     // E.g., if a 2-digit string width is `W`, right padding was `190 - W`.
     let ref_width = measure_text(b"#00");
     let right_padding = TEXT_PADDING_FROM_EDGE - ref_width;
 
     let left_text_x = (left_card_x + left_width).cast_signed() - right_padding - left_text_width;
-    let right_text_x = (right_card_x + right_width).cast_signed() - right_padding - right_text_width;
+    let right_text_x =
+        (right_card_x + right_width).cast_signed() - right_padding - right_text_width;
     let text_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
     draw_text(&mut final_image, left_text, left_text_x, text_y);
