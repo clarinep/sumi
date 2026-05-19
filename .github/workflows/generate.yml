@@ -23,7 +23,7 @@ jobs:
       env:
         CARDS_DIR: "assets"
         PORT: 3000
-        RUST_LOG: debug
+        RUST_LOG: info
       run: |
         cargo +nightly run --release > sumi.log 2>&1 &
         echo $! > sumi.pid
@@ -41,8 +41,8 @@ jobs:
         
         CARD1=${CARDS[$((RANDOM % ${#CARDS[@]}))]}
         CARD2=${CARDS[$((RANDOM % ${#CARDS[@]}))]}
-        PRINT1=$((1 + RANDOM % 99))
-        PRINT2=$((1 + RANDOM % 99))
+        PRINT1=$((1 + RANDOM % 999))
+        PRINT2=$((1 + RANDOM % 999))
         FILENAME="drop_$(date +%s).webp"
         curl -s -f -o "generated/$FILENAME" "http://localhost:3000/render/drop?left=$CARD1&right=$CARD2&left_print=$PRINT1&right_print=$PRINT2"
         
