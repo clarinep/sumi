@@ -3,9 +3,9 @@ use webpx::{EncoderConfig, Preset, Unstoppable};
 
 use crate::renderer::{canvas::RawCardImage, error::RenderError};
 
-const WEBP_QUALITY: f32 = 100.0;
+const WEBP_QUALITY: f32 = 85.0;
 const WEBP_SPEED: i32 = 0;
-const WEBP_ALPHA_QUALITY: i32 = 49;
+const WEBP_ALPHA_QUALITY: i32 = 80;
 const WEBP_THREAD_LEVEL: i32 = 1;
 const WEBP_SEGMENTS: i32 = 1;
 
