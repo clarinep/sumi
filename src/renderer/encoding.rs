@@ -5,7 +5,7 @@ use crate::renderer::{canvas::RawCardImage, error::RenderError};
 
 const WEBP_QUALITY: f32 = 80.0;
 const WEBP_SPEED: i32 = 0;
-const WEBP_ALPHA_QUALITY: i32 = 80;
+const WEBP_ALPHA_QUALITY: i32 = 50;
 const WEBP_THREAD_LEVEL: i32 = 1;
 const WEBP_SEGMENTS: i32 = 1;
 
