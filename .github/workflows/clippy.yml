@@ -9,7 +9,7 @@ env:
 
 jobs:
   clippy-auto-fix:
-    name: Clippy Target & Fix
+    name: Clippy
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -26,13 +26,8 @@ jobs:
           rustup component add clippy
           rustup toolchain install nightly --profile minimal -c rustfmt
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Auto-fix Clippy warnings
+      - name: Fix Clippy warnings
         run: |
-          # --allow-dirty and --allow-no-vcs lets it fix files right here in the runner
-          # We enable perf, pedantic, and nursery, but ignore missing docs so it doesn't clutter code
           cargo clippy --fix --workspace --allow-dirty --allow-no-vcs -- \
             -W clippy::perf \
             -W clippy::pedantic \
