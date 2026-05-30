@@ -6,7 +6,7 @@ use super::{
     encoding::encode_webp,
     error::RenderError,
     pixels::{Point, RawCardImage, Size},
-    print::{draw_text, measure_text},
+    print::{draw_print_number, measure_print_number},
 };
 
 const TEXT_SIZE: f32 = 60.0;
@@ -15,7 +15,12 @@ const PADDING_BETWEEN_CARDS: u32 = 20;
 const TEXT_PADDING_FROM_BOTTOM: i32 = 80;
 
 #[inline]
-fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, pos: Point<u32>) {
+fn copy_card_pixels(
+    buffer: &mut [u8],
+    card: &RawCardImage,
+    total_width: u32,
+    pos: Point<u32>,
+) {
     let card_row_bytes = (card.size.width * 4) as usize;
     let total_row_bytes = (total_width * 4) as usize;
     let start_index = ((pos.y * total_width + pos.x) * 4) as usize;
@@ -69,31 +74,30 @@ pub fn create_drop_image(
         pixels: buffer.into_boxed_slice(),
     };
 
-    let left_text_str = format!("#{left_card_print}");
-    let left_text = left_text_str.as_bytes();
-
-    let right_text_str = format!("#{right_card_print}");
-    let right_text = right_text_str.as_bytes();
+    let left_print_str = format!("#{left_card_print}");
+    let left_print = left_print_str.as_bytes();
+    let right_print_str = format!("#{right_card_print}");
+    let right_print = right_print_str.as_bytes();
 
     let canvas_time = start_canvas.elapsed();
-    let start_text = Instant::now();
+    let start_print = Instant::now();
 
     // count positions for text and draw it to the image
-    let left_text_width = measure_text(left_text);
-    let right_text_width = measure_text(right_text);
-
-    let ref_width = measure_text(b"#00");
+    let left_print_width = measure_print_number(left_print);
+    let right_print_width = measure_print_number(right_print);
+ 
+    let ref_width = measure_print_number(b"#00");
     let right_padding = TEXT_PADDING_FROM_EDGE - ref_width;
 
-    let left_text_x = (left_card_x + left_width).cast_signed() - right_padding - left_text_width;
-    let right_text_x =
-        (right_card_x + right_width).cast_signed() - right_padding - right_text_width;
-    let text_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    let left_print_x = (left_card_x + left_width).cast_signed() - right_padding - left_print_width;
+    let right_print_x =
+        (right_card_x + right_width).cast_signed() - right_padding - right_print_width;
+    let print_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_text(&mut final_image, left_text, Point::new(left_text_x, text_y));
-    draw_text(&mut final_image, right_text, Point::new(right_text_x, text_y));
+    draw_print_number(&mut final_image, left_print, Point::new(left_print_x, print_y));
+    draw_print_number(&mut final_image, right_print, Point::new(right_print_x, print_y));
 
-    let text_time = start_text.elapsed();
+    let print_time = start_print.elapsed();
 
     let start_encode = Instant::now();
 
@@ -104,7 +108,7 @@ pub fn create_drop_image(
     log::debug!(
         "pasting={:.3}ms, font={:.3}ms, encode={:.3}ms",
         canvas_time.as_secs_f64() * 1000.0,
-        text_time.as_secs_f64() * 1000.0,
+        print_time.as_secs_f64() * 1000.0,
         encode_time.as_secs_f64() * 1000.0
     );
 
