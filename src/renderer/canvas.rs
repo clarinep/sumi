@@ -1,177 +1,18 @@
-use std::{
-    fmt::{Debug, Formatter, Result as FmtResult},
-    sync::LazyLock,
-    time::Instant,
-};
+use std::time::Instant;
 
 use bytes::Bytes;
-use fontdue::{Font, FontSettings};
 
-use crate::renderer::{encoding::encode_webp, error::RenderError};
-
-/// raw uncompressed rgba image
-/// this will act as a container that will replace our previous `image::RgbaImage`.
-pub struct RawCardImage {
-    pub width: u32,
-    pub height: u32,
-    pub pixels: Box<[u8]>,
-}
-
-impl Debug for RawCardImage {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_struct("RawCardImage")
-            .field("width", &self.width)
-            .field("height", &self.height)
-            .field("pixels_len", &self.pixels.len())
-            .finish()
-    }
-}
+use super::{
+    encoding::encode_webp,
+    error::RenderError,
+    font::{draw_text, measure_text},
+    pixels::RawCardImage,
+};
 
 const TEXT_SIZE: f32 = 60.0;
 const TEXT_PADDING_FROM_EDGE: i32 = 190;
 const PADDING_BETWEEN_CARDS: u32 = 20;
 const TEXT_PADDING_FROM_BOTTOM: i32 = 80;
-
-// normal font lib takes a while to render a letter.
-// so now we do this.
-struct Letter {
-    coverage: Vec<u8>,
-    width: u32,
-    height: u32,
-    advance_width: i32,
-    offset_x: i32,
-    offset_y: i32,
-}
-
-struct LetterSet {
-    hash: Letter,
-    digits: [Letter; 10],
-}
-
-// -- Load font sekali doang
-static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
-    let font_data = include_bytes!("../../assets/LexendDeca-Bold.ttf") as &[u8];
-    let font =
-        Font::from_bytes(font_data, FontSettings::default()).expect("could not load font file");
-    let metrics = font.horizontal_line_metrics(TEXT_SIZE).unwrap();
-    let ascent = metrics.ascent;
-
-    let render_char = |c: char| -> Letter {
-        let (metrics, coverage) = font.rasterize(c, TEXT_SIZE);
-        let metric_width = metrics.width as u32;
-        let metric_height = metrics.height as u32;
-        Letter {
-            coverage,
-            width: metric_width,
-            height: metric_height,
-            advance_width: metrics.advance_width.round() as i32,
-            offset_x: metrics.xmin,
-            offset_y: (ascent - metrics.ymin as f32 - metrics.height as f32).round() as i32,
-        }
-    };
-
-    LetterSet {
-        hash: render_char('#'),
-        digits: [
-            render_char('0'),
-            render_char('1'),
-            render_char('2'),
-            render_char('3'),
-            render_char('4'),
-            render_char('5'),
-            render_char('6'),
-            render_char('7'),
-            render_char('8'),
-            render_char('9'),
-        ],
-    }
-});
-
-pub fn init_font() {
-    let _ = &*LETTERS;
-}
-
-/// here we manually do alpha blending of the fonts to the image pixel buffer.
-/// we do this manually instead of using a image processing library
-/// because it is a bitty faster and avoids useless overhead.
-/// we are simply manipulating the byte array for some tiny peformance gain
-#[inline]
-#[allow(clippy::many_single_char_names)]
-fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
-    let canvas_width = canvas.width.cast_signed();
-    let canvas_height = canvas.height.cast_signed();
-    let canvas_buf = &mut canvas.pixels;
-
-    for b in text.iter().copied() {
-        // look up the letter
-        // we only support 1-9 and #
-        let letter = match b {
-            b'#' => &LETTERS.hash,
-            b'0'..=b'9' => &LETTERS.digits[(b - b'0') as usize],
-            _ => continue,
-        };
-
-        // pre cast letter w h to i32 to avoid repeated casting
-        let letter_width = letter.width.cast_signed();
-        let letter_height = letter.height.cast_signed();
-
-        // count the starting x and y coords for letter on the canvas
-        let draw_y = y + letter.offset_y;
-
-        for draw_y_offset in 0..letter_height {
-            let canvas_y = draw_y + draw_y_offset;
-
-            // skip row if its outside canvas
-            if canvas_y < 0 || canvas_y >= canvas_height {
-                continue;
-            }
-
-            // count and make sure we dont draw outside canvas
-            let draw_x_start = 0.max(-(x + letter.offset_x));
-            let draw_x_end = letter_width.min(canvas_width - (x + letter.offset_x));
-
-            // skip if the letter horizontally is outside canvas
-            if draw_x_start >= draw_x_end {
-                continue;
-            }
-
-            // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            let canvas_pixel_start = usize::try_from(
-                (canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4,
-            )
-            .unwrap();
-            let letter_pixel_start =
-                usize::try_from(draw_y_offset * letter_width + draw_x_start).unwrap();
-
-            let count = usize::try_from(draw_x_end - draw_x_start).unwrap();
-            let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
-            let glyph_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
-
-            for (pixel, &coverage) in target_pixels.chunks_exact_mut(4).zip(glyph_row) {
-                if coverage == 255 {
-                    pixel.copy_from_slice(&[255, 255, 255, 255]);
-                } else if coverage > 0 {
-                    let alpha = u32::from(coverage);
-                    let inv_alpha = 255 - alpha;
-
-                    let r = u32::from(pixel[0]);
-                    let g = u32::from(pixel[1]);
-                    let b = u32::from(pixel[2]);
-                    let a = u32::from(pixel[3]);
-
-                    // no more bitshift
-                    pixel[0] = (alpha + (r * inv_alpha) / 255) as u8;
-                    pixel[1] = (alpha + (g * inv_alpha) / 255) as u8;
-                    pixel[2] = (alpha + (b * inv_alpha) / 255) as u8;
-                    pixel[3] = (alpha + (a * inv_alpha) / 255) as u8;
-                }
-            }
-        }
-
-        // up the x coord for the next letter.
-        x += letter.advance_width;
-    }
-}
 
 #[inline]
 fn copy_card_pixels(
@@ -191,19 +32,6 @@ fn copy_card_pixels(
     for (dest_row, src_row) in dest_rows.zip(src_rows).take(card.height as usize) {
         dest_row[..card_row_bytes].copy_from_slice(src_row);
     }
-}
-
-fn measure_text(text: &[u8]) -> i32 {
-    let mut width = 0;
-    for b in text.iter().copied() {
-        let letter = match b {
-            b'#' => &LETTERS.hash,
-            b'0'..=b'9' => &LETTERS.digits[(b - b'0') as usize],
-            _ => continue,
-        };
-        width += letter.advance_width;
-    }
-    width
 }
 
 /// combine two card images and add print numbers = drop image
@@ -261,8 +89,6 @@ pub fn create_drop_image(
     let left_text_width = measure_text(left_text);
     let right_text_width = measure_text(right_text);
 
-    // We adjust it so that a 2-digit string perfectly matches the old 190 left-anchor padding.
-    // E.g., if a 2-digit string width is `W`, right padding was `190 - W`.
     let ref_width = measure_text(b"#00");
     let right_padding = TEXT_PADDING_FROM_EDGE - ref_width;
 
