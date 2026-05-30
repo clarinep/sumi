@@ -1,7 +1,5 @@
 use std::sync::LazyLock;
-
 use fontdue::{Font, FontSettings};
-
 use super::pixels::{Point, RawCardImage};
 
 const TEXT_SIZE: f32 = 60.0;
@@ -71,12 +69,12 @@ pub fn init_font() {
 /// we are simply manipulating the byte array for some tiny peformance gain
 #[inline]
 #[allow(clippy::many_single_char_names)]
-pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut pos: Point<i32>) {
+pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos: Point<i32>) {
     let canvas_width = canvas.size.width.cast_signed();
     let canvas_height = canvas.size.height.cast_signed();
     let canvas_buf = &mut canvas.pixels;
 
-    for b in text.iter().copied() {
+    for b in print_number.iter().copied() {
         // look up the letter
         // we only support 1-9 and #
         let letter = match b {
@@ -125,19 +123,25 @@ pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut pos: Point<i32>) {
                 if coverage == 255 {
                     pixel.copy_from_slice(&[255, 255, 255, 255]);
                 } else if coverage > 0 {
-                    let alpha = u32::from(coverage);
-                    let inv_alpha = 255 - alpha;
+                    let fg_a = u32::from(coverage);
+                    let inv_fg_a = 255 - fg_a;
+                    let bg_a = u32::from(pixel[3]);
+                    // out_a = fg_a + bg_a * (255 - fg_a) / 255
+                    let out_a_times_255 = fg_a * 255 + bg_a * inv_fg_a;
+                    let out_a = out_a_times_255 / 255;
+
+                    if out_a == 0 {
+                        continue;
+                    }
 
                     let r = u32::from(pixel[0]);
                     let g = u32::from(pixel[1]);
                     let b = u32::from(pixel[2]);
-                    let a = u32::from(pixel[3]);
 
-                    // no more bitshift
-                    pixel[0] = (alpha + (r * inv_alpha) / 255) as u8;
-                    pixel[1] = (alpha + (g * inv_alpha) / 255) as u8;
-                    pixel[2] = (alpha + (b * inv_alpha) / 255) as u8;
-                    pixel[3] = (alpha + (a * inv_alpha) / 255) as u8;
+                    pixel[0] = ((255 * fg_a * 255 + r * bg_a * inv_fg_a) / out_a_times_255) as u8;
+                    pixel[1] = ((255 * fg_a * 255 + g * bg_a * inv_fg_a) / out_a_times_255) as u8;
+                    pixel[2] = ((255 * fg_a * 255 + b * bg_a * inv_fg_a) / out_a_times_255) as u8;
+                    pixel[3] = out_a as u8;
                 }
             }
         }
@@ -147,9 +151,9 @@ pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut pos: Point<i32>) {
     }
 }
 
-pub fn measure_text(text: &[u8]) -> i32 {
+pub fn measure_print_number(print_number: &[u8]) -> i32 {
     let mut width = 0;
-    for b in text.iter().copied() {
+    for b in print_number.iter().copied() {
         let letter = match b {
             b'#' => &LETTERS.hash,
             b'0'..=b'9' => &LETTERS.digits[(b - b'0') as usize],
