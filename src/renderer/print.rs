@@ -1,8 +1,6 @@
 use std::sync::LazyLock;
-
 use fontdue::{Font, FontSettings};
-
-use super::pixels::RawCardImage;
+use super::pixels::{Point, RawCardImage};
 
 const TEXT_SIZE: f32 = 60.0;
 
@@ -71,9 +69,9 @@ pub fn init_font() {
 /// we are simply manipulating the byte array for some tiny peformance gain
 #[inline]
 #[allow(clippy::many_single_char_names)]
-pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
-    let canvas_width = canvas.width.cast_signed();
-    let canvas_height = canvas.height.cast_signed();
+pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut pos: Point<i32>) {
+    let canvas_width = canvas.size.width.cast_signed();
+    let canvas_height = canvas.size.height.cast_signed();
     let canvas_buf = &mut canvas.pixels;
 
     for b in text.iter().copied() {
@@ -90,7 +88,7 @@ pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
         let letter_height = letter.height.cast_signed();
 
         // count the starting x and y coords for letter on the canvas
-        let draw_y = y + letter.offset_y;
+        let draw_y = pos.y + letter.offset_y;
 
         for draw_y_offset in 0..letter_height {
             let canvas_y = draw_y + draw_y_offset;
@@ -101,8 +99,8 @@ pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
             }
 
             // count and make sure we dont draw outside canvas
-            let draw_x_start = 0.max(-(x + letter.offset_x));
-            let draw_x_end = letter_width.min(canvas_width - (x + letter.offset_x));
+            let draw_x_start = 0.max(-(pos.x + letter.offset_x));
+            let draw_x_end = letter_width.min(canvas_width - (pos.x + letter.offset_x));
 
             // skip if the letter horizontally is outside canvas
             if draw_x_start >= draw_x_end {
@@ -111,7 +109,7 @@ pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
             let canvas_pixel_start = usize::try_from(
-                (canvas_y * canvas_width + (x + letter.offset_x + draw_x_start)) * 4,
+                (canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4,
             )
             .unwrap();
             let letter_pixel_start =
@@ -143,7 +141,7 @@ pub fn draw_text(canvas: &mut RawCardImage, text: &[u8], mut x: i32, y: i32) {
         }
 
         // up the x coord for the next letter.
-        x += letter.advance_width;
+        pos.x += letter.advance_width;
     }
 }
 
