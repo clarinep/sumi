@@ -15,12 +15,7 @@ const PADDING_BETWEEN_CARDS: u32 = 20;
 const TEXT_PADDING_FROM_BOTTOM: i32 = 80;
 
 #[inline]
-fn copy_card_pixels(
-    buffer: &mut [u8],
-    card: &RawCardImage,
-    total_width: u32,
-    pos: Point<u32>,
-) {
+fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, pos: Point<u32>) {
     let card_row_bytes = (card.size.width * 4) as usize;
     let total_row_bytes = (total_width * 4) as usize;
     let start_index = ((pos.y * total_width + pos.x) * 4) as usize;
@@ -85,7 +80,7 @@ pub fn create_drop_image(
     // count positions for text and draw it to the image
     let left_print_width = measure_print_number(left_print);
     let right_print_width = measure_print_number(right_print);
- 
+
     let ref_width = measure_print_number(b"#00");
     let right_padding = TEXT_PADDING_FROM_EDGE - ref_width;
 
