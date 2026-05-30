@@ -5,7 +5,7 @@ use bytes::Bytes;
 use super::{
     encoding::encode_webp,
     error::RenderError,
-    font::{draw_text, measure_text},
+    print::{draw_text, measure_text},
     pixels::RawCardImage,
 };
 
