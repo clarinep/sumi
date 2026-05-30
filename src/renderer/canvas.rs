@@ -5,8 +5,8 @@ use bytes::Bytes;
 use super::{
     encoding::encode_webp,
     error::RenderError,
+    pixels::{Point, RawCardImage, Size},
     print::{draw_text, measure_text},
-    pixels::RawCardImage,
 };
 
 const TEXT_SIZE: f32 = 60.0;
@@ -19,7 +19,7 @@ fn copy_card_pixels(
     buffer: &mut [u8],
     card: &RawCardImage,
     total_width: u32,
-    pos: pixels::Point<u32>,
+    pos: Point<u32>,
 ) {
     let card_row_bytes = (card.size.width * 4) as usize;
     let total_row_bytes = (total_width * 4) as usize;
@@ -65,12 +65,12 @@ pub fn create_drop_image(
     let card_y = PADDING_BETWEEN_CARDS;
 
     // copy pixels from left and right card into buffer.
-    copy_card_pixels(&mut buffer, left_card, total_width, pixels::Point::new(left_card_x, card_y));
-    copy_card_pixels(&mut buffer, right_card, total_width, pixels::Point::new(right_card_x, card_y));
+    copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
+    copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
 
     // wrap the buffer into RawCardImage so we can pass it to the encoder etc
     let mut final_image = RawCardImage {
-        size: pixels::Size::new(total_width, total_height),
+        size: Size::new(total_width, total_height),
         pixels: buffer.into_boxed_slice(),
     };
 
@@ -95,8 +95,8 @@ pub fn create_drop_image(
         (right_card_x + right_width).cast_signed() - right_padding - right_text_width;
     let text_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_text(&mut final_image, left_text, pixels::Point::new(left_text_x, text_y));
-    draw_text(&mut final_image, right_text, pixels::Point::new(right_text_x, text_y));
+    draw_text(&mut final_image, left_text, Point::new(left_text_x, text_y));
+    draw_text(&mut final_image, right_text, Point::new(right_text_x, text_y));
 
     let text_time = start_text.elapsed();
 
