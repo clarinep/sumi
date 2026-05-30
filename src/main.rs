@@ -11,7 +11,7 @@ use tokio::{net::TcpListener, signal};
 
 use crate::{
     config::Config,
-    renderer::{canvas::init_font, CardRenderer},
+    renderer::{print::init_font, CardRenderer},
     routes::{handle_metrics, handle_render_drop},
 };
 
