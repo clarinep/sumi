@@ -2,6 +2,8 @@ pub mod cache;
 pub mod canvas;
 pub mod encoding;
 pub mod error;
+pub mod print;
+pub mod pixels;
 
 use std::{
     num::NonZero,
@@ -16,8 +18,9 @@ use std::{
 
 use bytes::Bytes;
 use cache::CardCache;
-use canvas::{create_drop_image, init_font};
+use canvas::create_drop_image;
 use error::RenderError;
+use print::init_font;
 use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 const TIMEOUT_SECONDS: u64 = 10;
