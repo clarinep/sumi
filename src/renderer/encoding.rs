@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use webpx::{EncoderConfig, Preset, Unstoppable};
 
-use crate::renderer::{canvas::RawCardImage, error::RenderError};
+use crate::renderer::{error::RenderError, pixels::RawCardImage};
 
 const WEBP_QUALITY: f32 = 85.0;
 const WEBP_SPEED: i32 = 0;
@@ -12,7 +12,7 @@ const WEBP_SEGMENTS: i32 = 1;
 /// we take raw pixels of two diff cards from moka cache
 /// paste it into canvas and draw print nums
 /// but because of that huge amount of alpha pixels and bigger image dimension
-/// now if we send that raw data over to discord, lets just say the file size would be 2 MB
+/// now if we send that pixels data over to discord, lets just say the file size would be 2 MB
 /// so we would suffer two things, our side and the users side of having to load that shit
 /// this is why we do reencoding back to a "new" compressed .webp giving us ~500 KB final file
 /// the point of using jpeg would be pointless as we need alpha support
