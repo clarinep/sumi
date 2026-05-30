@@ -1,5 +1,7 @@
 use std::sync::LazyLock;
+
 use fontdue::{Font, FontSettings};
+
 use super::pixels::RawCardImage;
 
 const TEXT_SIZE: f32 = 60.0;

@@ -2,8 +2,8 @@ pub mod cache;
 pub mod canvas;
 pub mod encoding;
 pub mod error;
-pub mod print;
 pub mod pixels;
+pub mod print;
 
 use std::{
     num::NonZero,

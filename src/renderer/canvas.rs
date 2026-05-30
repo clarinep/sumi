@@ -5,8 +5,8 @@ use bytes::Bytes;
 use super::{
     encoding::encode_webp,
     error::RenderError,
-    print::{draw_text, measure_text},
     pixels::RawCardImage,
+    print::{draw_text, measure_text},
 };
 
 const TEXT_SIZE: f32 = 60.0;
