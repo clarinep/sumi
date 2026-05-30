@@ -20,8 +20,8 @@ const WEBP_SEGMENTS: i32 = 1;
 /// using lossless is also not worth, although encoding takes 100ms instead of our current 350ms
 /// it is uncompressed and our drop image dimension is huge so again file size would be 2 MB - bad.
 pub fn encode_webp(image: &RawCardImage) -> Result<Bytes, RenderError> {
-    let width = image.width;
-    let height = image.height;
+    let width = image.size.width;
+    let height = image.size.height;
     let pixel_data = &image.pixels;
 
     // we keep encoding on one thread so we avoid slowing down the server.
