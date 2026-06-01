@@ -5,7 +5,7 @@
 
 [dependencies]
   axum              = { version = "0.8.9" }
-  bytes             = "1.9.0"
+  bytes             = "1.11.1"
   fontdue           = "0.9.3"
   log               = "0.4.30"
   mimalloc          = "0.1.52"
