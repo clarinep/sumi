@@ -13,17 +13,14 @@ use moka::future::Cache;
 use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
 use webpx::decode_rgba;
 
-use crate::renderer::{
-    error::RenderError,
-    pixels::{self, RawCardImage},
-};
+use crate::renderer::{error::RenderError, pixels::{self, RawCardImage}};
 
 // limit of images, moka will auto kick older images
 // moka uses LFU algorithm so if by rng a card smh keeps getting dropped then it will protect
 // and kick out other less "popular" card that was NATURALLY unlucky to not be chosen by blair.
 // -- Buat lebih konteks per kartu sekitar 200kb, kalau RAM kena cap kita turunin aja
 // -- Tapi kita sini pake raw rgba yg belum dikompres, sekitar 3 juta byte
-const MAX_CACHE_SIZE_KB: u64 = 1_000_000; // -- 1 GB limit di kilobyte
+const MAX_CACHE_SIZE_KB: u64 = 2_000_000; // -- 2 GB limit in kilobyte
 
 #[derive(Default, Debug)]
 pub struct CacheStats {
@@ -51,14 +48,6 @@ impl Debug for CardCache {
 impl CardCache {
     /// sets up the cache and finds all images
     pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self, RenderError> {
-        let cache = Cache::builder()
-            .max_capacity(MAX_CACHE_SIZE_KB)
-            .weigher(|_key, value: &Arc<RawCardImage>| -> u32 {
-                // -- Cache di kilobytes biar bisa gampang ganti ke value gede
-                (value.pixels.len() / 1024) as u32
-            })
-            .build();
-
         let file_index = Self::build_card_list(cards_directory.as_ref());
 
         if file_index.is_empty() {
@@ -68,7 +57,16 @@ impl CardCache {
             ));
         }
 
-        log::info!("found {} card images on disk", file_index.len());
+        let cache = Cache::builder()
+            .max_capacity(MAX_CACHE_SIZE_KB)
+            .initial_capacity(file_index.len())
+            .weigher(|_key, value: &Arc<RawCardImage>| -> u32 {
+                // -- Cache di kilobytes biar bisa gampang ganti ke value gede
+                (value.pixels.len() / 1024) as u32
+            })
+            .build();
+
+        tracing::info!("found {} card images on disk", file_index.len());
 
         Ok(Self { memory: cache, file_index: Arc::new(file_index), stats: CacheStats::default() })
     }
@@ -107,7 +105,7 @@ impl CardCache {
 
         // warm cache
         spawn(async move {
-            log::info!("baking moka cache..");
+            tracing::info!("baking moka cache..");
             let warmed = Arc::new(AtomicUsize::new(0));
             let warmed_kb = Arc::new(AtomicU64::new(0));
             let semaphore = Arc::new(Semaphore::new(8));
@@ -117,7 +115,7 @@ impl CardCache {
                 // check if we reached 90% cap
                 let current_kb = warmed_kb.load(Ordering::Relaxed);
                 if current_kb > (MAX_CACHE_SIZE_KB * 9 / 10) {
-                    log::info!("cache prewarm reached capped limit, stopping!");
+                    tracing::info!("cache prewarm reached capped limit, stopping!");
                     break;
                 }
 
@@ -128,7 +126,7 @@ impl CardCache {
                 // check if webp or not, also allow ttf for now.
                 if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
                     if path.extension().is_none_or(|e| e != "ttf") {
-                        log::warn!(
+                        tracing::warn!(
                             "file '{}' is not a valid webp image.. skipping decoding!",
                             path.display()
                         );
@@ -169,7 +167,7 @@ impl CardCache {
             let _ = semaphore.acquire_many(8).await.expect("semaphore unexpectedly closed");
 
             // slightly innacurate size as it counts the lexend deca .ttf file
-            log::info!(
+            tracing::info!(
                 "finished baking {} cards - {} mb",
                 warmed.load(Ordering::Relaxed),
                 warmed_kb.load(Ordering::Relaxed) / 1024
@@ -189,10 +187,12 @@ impl CardCache {
     pub async fn get_card(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
         if let Some(img) = self.memory.get(name).await {
             self.stats.hits.fetch_add(1, Ordering::Relaxed);
+            tracing::trace!("cache hit for {}", name);
             return Ok(img);
         }
 
         self.stats.misses.fetch_add(1, Ordering::Relaxed);
+        tracing::trace!("cache miss for {}", name);
 
         // a check on whether file exists before trying to read it
         let path = self
@@ -211,7 +211,7 @@ impl CardCache {
 
                 // reject non webp file
                 if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
-                    log::warn!(
+                    tracing::warn!(
                         "sumi rejected file '{}' because its not a webp image..",
                         path.display()
                     );
@@ -229,10 +229,7 @@ impl CardCache {
                         ))
                     })?;
 
-                    let image = RawCardImage {
-                        size: pixels::Size::new(width, height),
-                        pixels: pixels.into_boxed_slice(),
-                    };
+                    let image = RawCardImage { size: pixels::Size::new(width, height), pixels: pixels.into_boxed_slice() };
                     Ok(Arc::new(image))
                 })
                 .await
