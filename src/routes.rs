@@ -35,6 +35,8 @@ pub async fn handle_render_drop(
     let start = Instant::now();
     let left_print = request.left_print.unwrap_or(1);
     let right_print = request.right_print.unwrap_or(1);
+    
+    tracing::debug!("starting render for {} (#{}) and {} (#{})", request.left, left_print, request.right, right_print);
 
     match renderer.render_drop(&request.left, &request.right, left_print, right_print).await {
         Ok(image_data) => {
@@ -42,7 +44,7 @@ pub async fn handle_render_drop(
             let elapsed = start.elapsed();
             let bytes_sent = image_data.len();
             renderer.stats.record(false);
-            log::debug!(
+            tracing::debug!(
                 "rendered: {}/{} ({:.3}ms) - {} bytes",
                 request.left,
                 request.right,
@@ -69,9 +71,9 @@ pub async fn handle_render_drop(
             };
 
             if status == StatusCode::GATEWAY_TIMEOUT {
-                log::warn!("timeout: {}/{}", request.left, request.right);
+                tracing::warn!("timeout: {}/{}", request.left, request.right);
             } else {
-                log::debug!("failed: {}/{} - {}", request.left, request.right, error_msg);
+                tracing::debug!("failed: {}/{} - {}", request.left, request.right, error_msg);
             }
 
             let json_resp = Json(json!({ "error": error_msg }));
