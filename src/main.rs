@@ -33,14 +33,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
     let sumi_asc = include_str!("ascii.txt");
-    println!("\n\x1b[38;5;62m{sumi_asc}\x1b[0m");
+    println!("\n\x1b[38;5;62m{}\x1b[0m", sumi_asc);
 
     let cfg = Config::load();
+
     tracing::info!("!! starting sumi on port {}", cfg.port);
     tracing::info!("baking in lexend deca font..");
     init_font();
 
-    let renderer = CardRenderer::new(cfg.cards_dir.clone()).expect("failed to wake sumi up..");
+    let renderer = match CardRenderer::new(cfg.cards_dir.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("failed to wake sumi up..: {}", e);
+            std::process::exit(1);
+        }
+    };
     let state = Arc::new(renderer);
 
     // prewarm cache di belakang
