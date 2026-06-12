@@ -2,8 +2,8 @@ pub mod cache;
 pub mod canvas;
 pub mod encoding;
 pub mod error;
-pub mod pixels;
 pub mod print;
+pub mod pixels;
 
 use std::{
     num::NonZero,
@@ -55,7 +55,7 @@ pub struct CardRenderer {
 impl CardRenderer {
     pub fn new(cards_directory: impl Into<PathBuf>) -> Result<Self, RenderError> {
         let cores = thread::available_parallelism().map_or(4, NonZero::get);
-        log::info!("sumi found {cores} cpu cores");
+        tracing::info!("sumi found {cores} cpu cores");
         init_font();
 
         Ok(Self {
@@ -72,10 +72,10 @@ impl CardRenderer {
         let active_tasks =
             self.total_permits.saturating_sub(self.cpu_semaphore.available_permits());
         if active_tasks > 0 {
-            log::info!("waiting for {active_tasks} tasks to drain...");
+            tracing::info!("waiting for {active_tasks} tasks to drain...");
         }
         let _ = self.cpu_semaphore.acquire_many(self.total_permits as u32).await;
-        log::info!("all tasks cleared!");
+        tracing::info!("all tasks cleared!");
     }
 
     /// creates the final image.
@@ -95,7 +95,7 @@ impl CardRenderer {
                 self.card_cache.get_card(right_card_name)
             )?;
             let fetch_elapsed = start_fetch.elapsed();
-            log::debug!("fetching cards took {:.3}ms", fetch_elapsed.as_secs_f64() * 1000.0);
+            tracing::debug!("fetching cards took {:.3}ms", fetch_elapsed.as_secs_f64() * 1000.0);
 
             // need to acquire an owned permit so we can move it inside the blocking thread.
             // if the request times out, the thread still holds the permit until it finishes
