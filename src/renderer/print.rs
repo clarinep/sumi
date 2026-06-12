@@ -1,7 +1,5 @@
 use std::sync::LazyLock;
-
 use fontdue::{Font, FontSettings};
-
 use super::pixels::{Point, RawCardImage};
 
 const TEXT_SIZE: f32 = 60.0;
@@ -128,6 +126,8 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
                     let fg_a = u32::from(coverage);
                     let inv_fg_a = 255 - fg_a;
                     let bg_a = u32::from(pixel[3]);
+
+                    // Unpremultiplied RGBA blending:
                     // out_a = fg_a + bg_a * (255 - fg_a) / 255
                     let out_a_times_255 = fg_a * 255 + bg_a * inv_fg_a;
                     let out_a = out_a_times_255 / 255;
