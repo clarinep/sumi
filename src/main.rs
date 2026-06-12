@@ -36,10 +36,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("\n\x1b[38;5;62m{sumi_asc}\x1b[0m");
 
     let cfg = Config::load();
-    println!(" \x1b[38;5;230;48;5;62m sumi \x1b[0m\n");
-
     tracing::info!("!! starting sumi on port {}", cfg.port);
-
     tracing::info!("baking in lexend deca font..");
     init_font();
 
