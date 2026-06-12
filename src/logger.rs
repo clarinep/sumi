@@ -1,7 +1,11 @@
 use std::fmt;
+
 use tracing::{Event, Subscriber};
 use tracing_subscriber::{
-    fmt::{format::{self, FormatEvent, FormatFields}, FmtContext},
+    fmt::{
+        format::{self, FormatEvent, FormatFields},
+        FmtContext,
+    },
     registry::LookupSpan,
 };
 
@@ -19,7 +23,7 @@ where
         event: &Event<'_>,
     ) -> fmt::Result {
         let meta = event.metadata();
-      
+
         // 62 = Indigo/Purple
         // 230 = Cream/White
         // 1 = Red, 2 = Green, 3 = Yellow, 4 = Blue, 5 = Purple, 6 = Cyan
@@ -32,8 +36,8 @@ where
         let (bg, fg, label, icon, icon_col) = match *meta.level() {
             tracing::Level::TRACE => ("6", "230", " TRAC ", "\u{F002}", "6"),
             tracing::Level::DEBUG => ("4", "230", " DBUG ", "\u{F0ED} ", "4"),
-            tracing::Level::INFO  => ("62", "230", " INFO ", "\u{F65F} ", "2"), 
-            tracing::Level::WARN  => ("3", "230", " WARN ", "\u{F128} ", "3"), 
+            tracing::Level::INFO => ("62", "230", " INFO ", "\u{F65F} ", "2"),
+            tracing::Level::WARN => ("3", "230", " WARN ", "\u{F128} ", "3"),
             tracing::Level::ERROR => ("1", "230", " FAIL ", "\u{FBAA} ", "1"),
         };
 
@@ -48,7 +52,7 @@ where
         // 3. Write fields (the log message)
         write!(writer, "\x1b[38;5;252m")?; // light grey text for body
         ctx.field_format().format_fields(writer.by_ref(), event)?;
-        write!(writer, "{}", rst)?;
+        write!(writer, "{rst}")?;
 
         writeln!(writer)
     }

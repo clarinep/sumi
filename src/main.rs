@@ -8,7 +8,7 @@ use std::{env, error::Error, net::SocketAddr, sync::Arc};
 use axum::{routing::get, serve, Router};
 use mimalloc::MiMalloc;
 use tokio::{net::TcpListener, signal};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::EnvFilter;
 
 use crate::{
     config::Config,
@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
     let sumi_asc = include_str!("ascii.txt");
-    println!("\n\x1b[38;5;62m{}\x1b[0m", sumi_asc);
+    println!("\n\x1b[38;5;62m{sumi_asc}\x1b[0m");
 
     let cfg = Config::load();
     println!(" \x1b[38;5;230;48;5;62m sumi \x1b[0m\n");

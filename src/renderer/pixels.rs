@@ -8,7 +8,7 @@ pub struct Point<T> {
 
 impl<T> Point<T> {
     #[inline]
-    pub fn new(x: T, y: T) -> Self {
+    pub const fn new(x: T, y: T) -> Self {
         Self { x, y }
     }
 }
@@ -21,7 +21,7 @@ pub struct Size<T> {
 
 impl<T> Size<T> {
     #[inline]
-    pub fn new(width: T, height: T) -> Self {
+    pub const fn new(width: T, height: T) -> Self {
         Self { width, height }
     }
 }

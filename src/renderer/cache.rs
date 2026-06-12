@@ -13,7 +13,10 @@ use moka::future::Cache;
 use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
 use webpx::decode_rgba;
 
-use crate::renderer::{error::RenderError, pixels::{self, RawCardImage}};
+use crate::renderer::{
+    error::RenderError,
+    pixels::{self, RawCardImage},
+};
 
 // limit of images, moka will auto kick older images
 // moka uses LFU algorithm so if by rng a card smh keeps getting dropped then it will protect
@@ -229,7 +232,10 @@ impl CardCache {
                         ))
                     })?;
 
-                    let image = RawCardImage { size: pixels::Size::new(width, height), pixels: pixels.into_boxed_slice() };
+                    let image = RawCardImage {
+                        size: pixels::Size::new(width, height),
+                        pixels: pixels.into_boxed_slice(),
+                    };
                     Ok(Arc::new(image))
                 })
                 .await

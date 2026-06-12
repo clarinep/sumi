@@ -35,8 +35,14 @@ pub async fn handle_render_drop(
     let start = Instant::now();
     let left_print = request.left_print.unwrap_or(1);
     let right_print = request.right_print.unwrap_or(1);
-    
-    tracing::debug!("starting render for {} (#{}) and {} (#{})", request.left, left_print, request.right, right_print);
+
+    tracing::debug!(
+        "starting render for {} (#{}) and {} (#{})",
+        request.left,
+        left_print,
+        request.right,
+        right_print
+    );
 
     match renderer.render_drop(&request.left, &request.right, left_print, right_print).await {
         Ok(image_data) => {
