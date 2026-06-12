@@ -1,4 +1,5 @@
 mod config;
+mod logger;
 mod renderer;
 mod routes;
 
@@ -6,8 +7,8 @@ use std::{env, error::Error, net::SocketAddr, sync::Arc};
 
 use axum::{routing::get, serve, Router};
 use mimalloc::MiMalloc;
-use pretty_env_logger::init as init_logger;
 use tokio::{net::TcpListener, signal};
+use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::{
     config::Config,
@@ -25,12 +26,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "info");
     }
-    init_logger();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .event_format(logger::LogFormatter)
+        .init();
+
+    let sumi_asc = include_str!("ascii.txt");
+    println!("\n\x1b[38;5;62m{}\x1b[0m", sumi_asc);
 
     let cfg = Config::load();
-    log::info!("!! starting sumi on port {}", cfg.port);
+    println!(" \x1b[38;5;230;48;5;62m sumi \x1b[0m\n");
 
-    log::info!("baking in lexend deca font..");
+    tracing::info!("!! starting sumi on port {}", cfg.port);
+
+    tracing::info!("baking in lexend deca font..");
     init_font();
 
     let renderer = CardRenderer::new(cfg.cards_dir.clone()).expect("failed to wake sumi up..");
@@ -48,11 +58,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let addr = SocketAddr::from(([127, 0, 0, 1], cfg.port));
     let listener = TcpListener::bind(addr).await?;
 
-    log::info!("server ready at http://{addr}");
+    tracing::info!("sumi ready at http://{addr}");
 
     serve(listener, app).with_graceful_shutdown(shutdown()).await?;
 
-    log::info!("sumi is draining tasks, please wait..");
+    tracing::info!("sumi is draining tasks, please wait..");
     state.wait_for_tasks_to_finish().await;
 
     Ok(())
@@ -60,5 +70,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn shutdown() {
     signal::ctrl_c().await.expect("ctrl+c");
-    log::info!("you gave sumi way too much caffeine..");
+    tracing::info!("you gave sumi way too much caffeine..");
 }
