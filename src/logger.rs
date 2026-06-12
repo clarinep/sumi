@@ -24,21 +24,23 @@ where
     ) -> fmt::Result {
         let meta = event.metadata();
 
-        // 62 = Indigo/Purple
-        // 230 = Cream/White
+        // Exact Mangal TUI Colors (ansi 256):
+        // 62 = Indigo/Purple (Mangal primary Title background)
+        // 230 = Cream/White (Mangal fg text for titles)
         // 1 = Red, 2 = Green, 3 = Yellow, 4 = Blue, 5 = Purple, 6 = Cyan
 
-        // Success: "\u{F65F}" (Green)
-        // Fail: "\u{FBAA}" (Red)
-        // Question: "\u{F128}" (Yellow)
-        // Progress: "\u{F0ED}" (Blue)
-        // Search: "\u{F002}" (Cyan)
+        // Using Mangal 'plain' icons since Nerd fonts are not rendering
+        // Success: "✓" (Green)
+        // Fail: "X" (Red)
+        // Question: "?" (Yellow)
+        // Progress: "@" (Blue)
+        // Search: "S" (Cyan)
         let (bg, fg, label, icon, icon_col) = match *meta.level() {
-            tracing::Level::TRACE => ("6", "230", " TRAC ", "\u{F002}", "6"),
-            tracing::Level::DEBUG => ("4", "230", " DBUG ", "\u{F0ED} ", "4"),
-            tracing::Level::INFO => ("62", "230", " INFO ", "\u{F65F} ", "2"),
-            tracing::Level::WARN => ("3", "230", " WARN ", "\u{F128} ", "3"),
-            tracing::Level::ERROR => ("1", "230", " FAIL ", "\u{FBAA} ", "1"),
+            tracing::Level::TRACE => ("6", "230", " TRAC ", "S", "6"),
+            tracing::Level::DEBUG => ("4", "230", " DBUG ", "@ ", "4"),
+            tracing::Level::INFO => ("62", "230", " INFO ", "✓ ", "2"),
+            tracing::Level::WARN => ("3", "230", " WARN ", "? ", "3"),
+            tracing::Level::ERROR => ("1", "230", " FAIL ", "X ", "1"),
         };
 
         let rst = "\x1b[0m";
