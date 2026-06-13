@@ -1,6 +1,6 @@
 use std::fmt;
 
-use tracing::{Event, Subscriber};
+use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{
     fmt::{
         format::{self, FormatEvent, FormatFields},
@@ -8,6 +8,32 @@ use tracing_subscriber::{
     },
     registry::LookupSpan,
 };
+
+#[derive(Debug, Clone, Copy)]
+struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+impl Color {
+    const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+}
+
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\x1b[38;2;{};{};{}m", self.r, self.g, self.b)
+    }
+}
+
+const COLOR_TRACE: Color = Color::new(205, 180, 219);
+const COLOR_DEBUG: Color = Color::new(189, 224, 254);
+const COLOR_INFO: Color = Color::new(241, 138, 131);
+const COLOR_WARN: Color = Color::new(255, 180, 162);
+const COLOR_FAIL: Color = Color::new(239,  35,  60);
+const COLOR_TEXT: Color = Color::new(226, 226, 226);
 
 pub struct LogFormatter;
 
@@ -18,43 +44,27 @@ where
 {
     fn format_event(
         &self,
-        ctx: &FmtContext<'_, S, N>,
+        context: &FmtContext<'_, S, N>,
         mut writer: format::Writer<'_>,
         event: &Event<'_>,
     ) -> fmt::Result {
-        let meta = event.metadata();
+        let metadata = event.metadata();
+        let level = metadata.level();
 
-        // Exact Mangal TUI Colors (ansi 256):
-        // 62 = Indigo/Purple (Mangal primary Title background)
-        // 230 = Cream/White (Mangal fg text for titles)
-        // 1 = Red, 2 = Green, 3 = Yellow, 4 = Blue, 5 = Purple, 6 = Cyan
-
-        // Using Mangal 'plain' icons since Nerd fonts are not rendering
-        // Success: "✓" (Green)
-        // Fail: "X" (Red)
-        // Question: "?" (Yellow)
-        // Progress: "@" (Blue)
-        // Search: "S" (Cyan)
-        let (bg, fg, label, icon, icon_col) = match *meta.level() {
-            tracing::Level::TRACE => ("6", "230", " TRAC ", "S", "6"),
-            tracing::Level::DEBUG => ("4", "230", " DBUG ", "@ ", "4"),
-            tracing::Level::INFO => ("62", "230", " INFO ", "✓ ", "2"),
-            tracing::Level::WARN => ("3", "230", " WARN ", "? ", "3"),
-            tracing::Level::ERROR => ("1", "230", " FAIL ", "X ", "1"),
+        let (color, label) = match *level {
+            Level::TRACE => (COLOR_TRACE, "trace"),
+            Level::DEBUG => (COLOR_DEBUG, "debug"),
+            Level::INFO  => (COLOR_INFO,  "info "),
+            Level::WARN  => (COLOR_WARN,  "warn "),
+            Level::ERROR => (COLOR_FAIL,  "fail "),
         };
 
-        let rst = "\x1b[0m";
+        let reset = "\x1b[0m";
 
-        // 1. Draw the log level as a Mangal TUI Title (bg/fg padded tag)
-        write!(writer, "\x1b[38;5;{fg};48;5;{bg}m{label}{rst} ")?;
-
-        // 2. Draw the corresponding Mangal UI icon with its specific color
-        write!(writer, "\x1b[38;5;{icon_col}m{icon}{rst} ")?;
-
-        // 3. Write fields (the log message)
-        write!(writer, "\x1b[38;5;252m")?; // light grey text for body
-        ctx.field_format().format_fields(writer.by_ref(), event)?;
-        write!(writer, "{rst}")?;
+        write!(writer, "{}{}{reset} ", color, label)?;
+        write!(writer, "{}", COLOR_TEXT)?;
+        context.field_format().format_fields(writer.by_ref(), event)?;
+        write!(writer, "{reset}")?;
 
         writeln!(writer)
     }
