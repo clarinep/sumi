@@ -9,7 +9,6 @@
 -- sumi will likely deal with a maximum of 2s latency on heavy demand
 -- and will "never" exceed our default 10s timeout so it will never fail fast.
 
-
 local cards = {}
 for line in io.lines("cards.txt") do
     if line ~= "" then table.insert(cards, line) end
