@@ -1,20 +1,20 @@
 [package]
-  name        = "sumi"
-  version     = "1.1.0"
-  edition     = "2021"
+  name    = "sumi"
+  version = "1.2.0"
+  edition = "2024"
 
 [dependencies]
-  axum              = { version = "0.8.9" }
-  bytes             = "1.9.0"
-  fontdue           = "0.9.3"
-  mimalloc          = "0.1.51"
-  moka              = { version = "0.12.15", features = ["future"] }
-  tracing           = "0.1.41"
+  axum               = { version = "0.8.9" }
+  bytes              = "1.9.0"
+  fontdue            = "0.9.3"
+  mimalloc           = "0.1.51"
+  TinyUFO            = "0.8.1"
+  tracing            = "0.1.41"
   tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-  serde             = { version = "1.0.217", features = ["derive"] }
-  serde_json        = "1.0.150"
-  tokio             = { version = "1.52.3", features = ["rt-multi-thread", "sync", "fs", "signal", "macros", "net", "time"] }
-  webpx             = "0.4.0"
+  serde              = { version = "1.0.217", features = ["derive"] }
+  serde_json         = "1.0.150"
+  tokio              = { version = "1.52.3", features = ["rt-multi-thread", "sync", "fs", "signal", "macros", "net", "time"] }
+  webpx              = "0.4.0"
 
 [profile.release]
   lto           = "fat"
