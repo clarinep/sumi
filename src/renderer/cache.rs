@@ -9,8 +9,8 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        Arc, RwLock,
         atomic::{AtomicU64, AtomicUsize, Ordering},
+        Arc, RwLock,
     },
 };
 
@@ -42,7 +42,7 @@ impl Debug for CardCache {
         f.debug_struct("CardCache")
             .field("file_index_len", &self.file_index.len())
             .field("stats", &self.stats)
-            .finish()
+            .finish_non_exhaustive() // intentional for hashmap
     }
 }
 
@@ -69,9 +69,7 @@ impl CardCache {
     // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
     fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, PathBuf> {
         fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, PathBuf>) {
-            let Ok(entries) = fs::read_dir(dir) else {
-                return;
-            };
+            let Ok(entries) = fs::read_dir(dir) else { return; };
 
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -80,9 +78,7 @@ impl CardCache {
                     continue;
                 }
 
-                let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
-                    continue;
-                };
+                let Some(ext) = path.extension().and_then(|s| s.to_str()) else { continue; };
 
                 if ext.eq_ignore_ascii_case("webp") {
                     if let Ok(rel_path) = path.strip_prefix(base_dir) {
@@ -145,7 +141,7 @@ impl CardCache {
                     // check if its webp or not.
                     if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
                         tracing::warn!("skipped '{}' (only webp supported)", path.display());
-                        return;
+                        return; 
                     }
 
                     let file_len = file_bytes.len() as u64;
@@ -162,7 +158,7 @@ impl CardCache {
                     .unwrap_or(None);
 
                     if let Some(arc_img) = result {
-                        let size_kb = (arc_img.pixels.len() / 1024);
+                        let size_kb = arc_img.pixels.len() / 1024;
                         if let Ok(mut guard) = memory.write() {
                             guard.insert(name, arc_img);
                         }
@@ -170,7 +166,7 @@ impl CardCache {
                         warmed_kb.fetch_add(size_kb as u64, Ordering::Relaxed);
                         warmed_disk_bytes.fetch_add(file_len, Ordering::Relaxed);
                     }
-
+                    
                     drop(permit);
                 });
             }
@@ -202,12 +198,12 @@ impl CardCache {
     // cache miss baca dari disk langsung (juga ga dimasukin ke cache, liat line 31)
     pub async fn get_card(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
         // cari di memory duluan pake read lock
-        if let Ok(guard) = self.memory.read()
-            && let Some(img) = guard.get(name)
-        {
-            self.stats.hits.fetch_add(1, Ordering::Relaxed);
-            tracing::trace!("cache hit for {}", name);
-            return Ok(img.clone());
+        if let Ok(guard) = self.memory.read() {
+            if let Some(img) = guard.get(name) {
+                self.stats.hits.fetch_add(1, Ordering::Relaxed);
+                tracing::trace!("cache hit for {}", name);
+                return Ok(img.clone());
+            }
         }
 
         self.stats.misses.fetch_add(1, Ordering::Relaxed);
@@ -243,8 +239,9 @@ impl CardCache {
             Ok(Arc::new(image))
         })
         .await
-        .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))??;
-
+        .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))?
+        ?; 
+        
         Ok(arc_img)
     }
 }
