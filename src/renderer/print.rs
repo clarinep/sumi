@@ -84,7 +84,8 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
                 continue;
             }
 
-            let canvas_pixel_start = ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4) as usize;
+            let canvas_pixel_start =
+                ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4) as usize;
             let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
             let count = (draw_x_end - draw_x_start) as usize;
 
