@@ -28,9 +28,9 @@ fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, po
     }
 }
 
-/// combine two card images and add print numbers = drop image
-/// we manually copy pixel rows from the card images. this is much faster
-/// than creating a new blank image and using a library to paste the card images to it.
+// combine two card images and add print numbers = drop image
+// we manually copy pixel rows from the card images. this is much faster
+// than creating a new blank image and using a library to paste the card images to it.
 pub fn create_drop_image(
     left_card: &RawCardImage,
     right_card: &RawCardImage,
@@ -60,8 +60,18 @@ pub fn create_drop_image(
     let card_y = PADDING_BETWEEN_CARDS;
 
     // copy pixels from left and right card into buffer.
-    copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
-    copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
+    copy_card_pixels(
+        &mut buffer,
+        left_card,
+        total_width,
+        Point::new(left_card_x, card_y),
+    );
+    copy_card_pixels(
+        &mut buffer,
+        right_card,
+        total_width,
+        Point::new(right_card_x, card_y),
+    );
 
     // wrap the buffer into RawCardImage so we can pass it to the encoder etc
     let mut final_image = RawCardImage {
@@ -81,21 +91,26 @@ pub fn create_drop_image(
     let left_print_width = measure_print_number(left_print);
     let right_print_width = measure_print_number(right_print);
 
-    // We adjust it so that a 2-digit string perfectly matches the old 190 left-anchor padding.
-    // E.g., if a 2-digit string width is `W`, right padding was `190 - W`.
     let ref_width = measure_print_number(b"#00");
     let right_padding = TEXT_PADDING_FROM_EDGE - ref_width;
 
-    let left_print_x = (left_card_x + left_width).cast_signed() - right_padding - left_print_width;
-    let right_print_x =
-        (right_card_x + right_width).cast_signed() - right_padding - right_print_width;
-    let print_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    // Standard 'as i32' is strictly idiomatic compared to relying on custom casting traits
+    let left_print_x = (left_card_x + left_width) as i32 - right_padding - left_print_width;
+    let right_print_x = (right_card_x + right_width) as i32 - right_padding - right_print_width;
+    let print_y = total_height as i32 - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_print_number(&mut final_image, left_print, Point::new(left_print_x, print_y));
-    draw_print_number(&mut final_image, right_print, Point::new(right_print_x, print_y));
+    draw_print_number(
+        &mut final_image,
+        left_print,
+        Point::new(left_print_x, print_y),
+    );
+    draw_print_number(
+        &mut final_image,
+        right_print,
+        Point::new(right_print_x, print_y),
+    );
 
     let print_time = start_print.elapsed();
-
     let start_encode = Instant::now();
 
     // encode final drop image to webp
@@ -103,7 +118,7 @@ pub fn create_drop_image(
     let encode_time = start_encode.elapsed();
 
     tracing::debug!(
-        "pasting={:.3}ms, font={:.3}ms, encode={:.3}ms",
+        "spent: paste={:.2}ms, font={:.2}ms, [encode={:.3}ms]",
         canvas_time.as_secs_f64() * 1000.0,
         print_time.as_secs_f64() * 1000.0,
         encode_time.as_secs_f64() * 1000.0
