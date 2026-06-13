@@ -20,8 +20,6 @@ struct LetterSet {
     digits: [Letter; 10],
 }
 
-// yes only the bold 700 version of lexend deca is used.
-// https://fonts.google.com/selection?preview.script=Latn
 static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
     let font_data = include_bytes!("../../assets/LexendDeca-Bold.ttf") as &[u8];
     let font =
@@ -53,53 +51,39 @@ pub fn init_font() {
     LazyLock::force(&LETTERS);
 }
 
-// here we manually do alpha blending of the fonts to the image pixel buffer.
-// we do this manually instead of using a image processing library
-// because it is a bitty faster and avoids useless overhead.
-// we are simply manipulating the byte array for some tiny peformance gain
 #[inline]
 #[allow(clippy::many_single_char_names)]
 pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos: Point<i32>) {
-    // Fixed u32 to i32 conversions cleanly using .cast_signed()
     let canvas_width = canvas.size.width.cast_signed();
     let canvas_height = canvas.size.height.cast_signed();
     let canvas_buf = &mut canvas.pixels;
 
     for &b in print_number {
-        // look up the letter
-        // we only support 1-9 and #
         let letter = match b {
             b'#' => &LETTERS.hash,
             b'0'..=b'9' => &LETTERS.digits[(b - b'0') as usize],
             _ => continue,
         };
 
-        // pre cast letter w h to i32 to avoid repeated casting (.cast_signed())
         let letter_width = letter.width.cast_signed();
         let letter_height = letter.height.cast_signed();
 
-        // count the starting x and y coords for letter on the canvas
         let draw_y = pos.y + letter.offset_y;
 
         for draw_y_offset in 0..letter_height {
             let canvas_y = draw_y + draw_y_offset;
 
-            // skip row if its outside canvas
             if canvas_y < 0 || canvas_y >= canvas_height {
                 continue;
             }
 
-            // count and make sure we dont draw outside canvas
             let draw_x_start = 0.max(-(pos.x + letter.offset_x));
             let draw_x_end = letter_width.min(canvas_width - (pos.x + letter.offset_x));
 
-            // skip if the letter horizontally is outside canvas
             if draw_x_start >= draw_x_end {
                 continue;
             }
 
-            // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            // Fixed i32 to usize conversions safely using explicit .cast_unsigned()
             let canvas_pixel_start = ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4).cast_unsigned();
             let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start).cast_unsigned();
             let count = (draw_x_end - draw_x_start).cast_unsigned();
@@ -115,7 +99,6 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
                     let inv_fg_a = 255 - fg_a;
                     let bg_a = u32::from(pixel[3]);
 
-                    // out_a = fg_a + bg_a * (255 - fg_a) / 255
                     let out_a_times_255 = fg_a * 255 + bg_a * inv_fg_a;
                     let out_a = out_a_times_255 / 255;
 
@@ -135,7 +118,6 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
             }
         }
 
-        // up the x coord for the next letter.
         pos.x += letter.advance_width;
     }
 }
