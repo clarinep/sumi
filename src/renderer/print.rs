@@ -60,8 +60,9 @@ pub fn init_font() {
 #[inline]
 #[allow(clippy::many_single_char_names)]
 pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos: Point<i32>) {
-    let canvas_width = canvas.size.width as i32;
-    let canvas_height = canvas.size.height as i32;
+    // Fixed u32 to i32 conversions cleanly using .cast_signed()
+    let canvas_width = canvas.size.width.cast_signed();
+    let canvas_height = canvas.size.height.cast_signed();
     let canvas_buf = &mut canvas.pixels;
 
     for &b in print_number {
@@ -73,9 +74,9 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
             _ => continue,
         };
 
-        // pre cast letter w h to i32 to avoid repeated casting
-        let letter_width = letter.width as i32;
-        let letter_height = letter.height as i32;
+        // pre cast letter w h to i32 to avoid repeated casting (.cast_signed())
+        let letter_width = letter.width.cast_signed();
+        let letter_height = letter.height.cast_signed();
 
         // count the starting x and y coords for letter on the canvas
         let draw_y = pos.y + letter.offset_y;
@@ -98,12 +99,10 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
             }
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            // use direct as usize instead of try_from().unwrap()
-            // we already bounds checked above so we know these are strictly >= 0
-            let canvas_pixel_start =
-                ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4) as usize;
-            let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
-            let count = (draw_x_end - draw_x_start) as usize;
+            // Fixed i32 to usize conversions safely using explicit .cast_unsigned()
+            let canvas_pixel_start = ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4).cast_unsigned();
+            let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start).cast_unsigned();
+            let count = (draw_x_end - draw_x_start).cast_unsigned();
 
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
             let glyph_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
