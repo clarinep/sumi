@@ -12,10 +12,10 @@ impl Config {
         // you can pass CARDS_DIR env before running
         // for now we will use our default path and default port 8888
         let home = env::var_os("USERPROFILE").or_else(|| env::var_os("HOME"));
-        let default_cards_dir = home
-            .map(PathBuf::from)
-            .map(|p| p.join("Documents").join("huty").join("cards"))
-            .unwrap_or_else(|| PathBuf::from("assets/cards"));
+        let default_cards_dir = home.map(PathBuf::from).map_or_else(
+            || PathBuf::from("assets/cards"),
+            |p| p.join("Documents").join("huty").join("cards"),
+        );
 
         let cards_dir = env::var("CARDS_DIR").map_or_else(|_| default_cards_dir, PathBuf::from);
 

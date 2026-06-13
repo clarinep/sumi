@@ -1,18 +1,18 @@
 use std::{
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::Instant,
 };
 
 use axum::{
-    extract::{Query, State},
-    http::{header, StatusCode},
-    response::IntoResponse,
     Json,
+    extract::{Query, State},
+    http::{StatusCode, header},
+    response::IntoResponse,
 };
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::renderer::{error::RenderError, CardRenderer};
+use crate::renderer::{CardRenderer, error::RenderError};
 
 // the data we expect when blair asks for an image.
 // we need character name from its filename and also print nums

@@ -5,14 +5,14 @@ mod routes;
 
 use std::{error::Error, net::SocketAddr, panic, sync::Arc};
 
-use axum::{routing::get, serve, Router};
+use axum::{Router, routing::get, serve};
 use mimalloc::MiMalloc;
 use tokio::{net::TcpListener, signal};
 use tracing_subscriber::EnvFilter;
 
 use crate::{
     config::Config,
-    renderer::{print::init_font, CardRenderer},
+    renderer::{CardRenderer, print::init_font},
     routes::{handle_metrics, handle_render_drop},
 };
 
@@ -50,16 +50,13 @@ static ALLOC: MiMalloc = MiMalloc;
 async fn main() -> Result<(), Box<dyn Error>> {
     aegis();
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("sumi=debug,info"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sumi=debug,info"));
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .event_format(logger::LogFormatter)
-        .init();
+    tracing_subscriber::fmt().with_env_filter(filter).event_format(logger::LogFormatter).init();
 
     let sumi_greeting = include_str!("ascii.txt");
-    println!("\n\x1b[38;2;241;138;131m{}\x1b[0m", sumi_greeting);
+    println!("\n\x1b[38;2;241;138;131m{sumi_greeting}\x1b[0m");
 
     let cfg = Config::load();
 

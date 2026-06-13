@@ -3,8 +3,8 @@ use std::fmt;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{
     fmt::{
-        format::{self, FormatEvent, FormatFields},
         FmtContext,
+        format::{self, FormatEvent, FormatFields},
     },
     registry::LookupSpan,
 };
@@ -32,7 +32,7 @@ const COLOR_TRACE: Color = Color::new(205, 180, 219);
 const COLOR_DEBUG: Color = Color::new(189, 224, 254);
 const COLOR_INFO: Color = Color::new(241, 138, 131);
 const COLOR_WARN: Color = Color::new(255, 180, 162);
-const COLOR_FAIL: Color = Color::new(239,  35,  60);
+const COLOR_FAIL: Color = Color::new(239, 35, 60);
 const COLOR_TEXT: Color = Color::new(226, 226, 226);
 
 pub struct LogFormatter;
@@ -54,15 +54,15 @@ where
         let (color, label) = match *level {
             Level::TRACE => (COLOR_TRACE, "trace"),
             Level::DEBUG => (COLOR_DEBUG, "debug"),
-            Level::INFO  => (COLOR_INFO,  "info "),
-            Level::WARN  => (COLOR_WARN,  "warn "),
-            Level::ERROR => (COLOR_FAIL,  "fail "),
+            Level::INFO => (COLOR_INFO, "info "),
+            Level::WARN => (COLOR_WARN, "warn "),
+            Level::ERROR => (COLOR_FAIL, "fail "),
         };
 
         let reset = "\x1b[0m";
 
-        write!(writer, "{}{}{reset} ", color, label)?;
-        write!(writer, "{}", COLOR_TEXT)?;
+        write!(writer, "{color}{label}{reset} ")?;
+        write!(writer, "{COLOR_TEXT}")?;
         context.field_format().format_fields(writer.by_ref(), event)?;
         write!(writer, "{reset}")?;
 

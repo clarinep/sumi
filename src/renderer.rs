@@ -9,8 +9,8 @@ use std::{
     num::NonZero,
     path::PathBuf,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},

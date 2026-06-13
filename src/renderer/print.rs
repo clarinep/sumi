@@ -100,7 +100,8 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
             // use direct as usize instead of try_from().unwrap()
             // we already bounds checked above so we know these are strictly >= 0
-            let canvas_pixel_start = ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4) as usize;
+            let canvas_pixel_start =
+                ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4) as usize;
             let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
             let count = (draw_x_end - draw_x_start) as usize;
 
