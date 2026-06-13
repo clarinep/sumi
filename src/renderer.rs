@@ -25,7 +25,7 @@ use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 const TIMEOUT_SECONDS: u64 = 10;
 
-/// simple counter to keep track of how sumi is doing.
+// simple counter to keep track of how sumi is doing.
 #[derive(Default, Debug)]
 pub struct RequestStats {
     pub total_requests: AtomicU64,
@@ -33,8 +33,8 @@ pub struct RequestStats {
 }
 
 impl RequestStats {
-    /// saves details of a single request after it finishes
-    /// this updates our running totals safely across multiple threads.
+    // saves details of a single request after it finishes
+    // this updates our running totals safely across multiple threads.
     pub fn record(&self, did_fail: bool) {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
         if did_fail {
@@ -55,7 +55,7 @@ pub struct CardRenderer {
 impl CardRenderer {
     pub fn new(cards_directory: impl Into<PathBuf>) -> Result<Self, RenderError> {
         let cores = thread::available_parallelism().map_or(4, NonZero::get);
-        tracing::info!("sumi found {cores} cpu cores");
+        tracing::info!("sumi woke up with [{cores} cpu cores]");
         init_font();
 
         Ok(Self {
@@ -67,20 +67,20 @@ impl CardRenderer {
         })
     }
 
-    /// wait for all background workers to finish
+    // wait for all background workers to finish
     pub async fn wait_for_tasks_to_finish(&self) {
         let active_tasks =
             self.total_permits.saturating_sub(self.cpu_semaphore.available_permits());
         if active_tasks > 0 {
-            tracing::info!("waiting for {active_tasks} tasks to drain...");
+            tracing::info!("finishing {} active tasks..", active_tasks);
         }
         let _ = self.cpu_semaphore.acquire_many(self.total_permits as u32).await;
-        tracing::info!("all tasks cleared!");
+        tracing::info!("all active tasks finished!");
     }
 
-    /// creates the final image.
-    /// if an image cant render your drop in 5 seconds, Too bad!
-    /// in blair-go side your cooldown wont get used. users can just try dropping again.
+    // creates the final image.
+    // if an image cant render your drop in 5 seconds, Too bad!
+    // in blair-go side your cooldown wont get used. users can just try dropping again.
     pub async fn render_drop(
         &self,
         left_card_name: &str,
@@ -104,7 +104,7 @@ impl CardRenderer {
                 .clone()
                 .acquire_owned()
                 .await
-                .expect("cpu semaphore closed unexpectedly");
+                .map_err(|_| RenderError::Internal("cpu semaphore died".to_string()))?;
 
             // move the heavy image work to a background thread
             let result = task::spawn_blocking(move || {
