@@ -55,8 +55,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing_subscriber::fmt().with_env_filter(filter).event_format(logger::LogFormatter).init();
 
-    let sumi_greeting = include_str!("ascii.txt");
-    println!("\n\x1b[38;2;241;138;131m{sumi_greeting}\x1b[0m");
+    let welcomer = include_str!("ascii.txt");
+    println!("\n\x1b[38;2;241;138;131m{welcomer}\x1b[0m");
 
     let cfg = Config::load();
 
