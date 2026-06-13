@@ -56,7 +56,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt().with_env_filter(filter).event_format(logger::LogFormatter).init();
 
     let welcomer = include_str!("ascii.txt");
-    println!("\n\x1b[38;2;241;138;131m{welcomer}\x1b[0m");
+    println!();
+    for line in welcomer.lines() {
+        println!("\x1b[38;2;241;138;131m{}\x1b[0m", line);
+    }
 
     let cfg = Config::load();
 
