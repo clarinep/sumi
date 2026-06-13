@@ -60,8 +60,18 @@ pub fn create_drop_image(
     let card_y = PADDING_BETWEEN_CARDS;
 
     // copy pixels from left and right card into buffer.
-    copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
-    copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
+    copy_card_pixels(
+        &mut buffer,
+        left_card,
+        total_width,
+        Point::new(left_card_x, card_y),
+    );
+    copy_card_pixels(
+        &mut buffer,
+        right_card,
+        total_width,
+        Point::new(right_card_x, card_y),
+    );
 
     // wrap the buffer into RawCardImage so we can pass it to the encoder etc
     let mut final_image = RawCardImage {
@@ -84,13 +94,20 @@ pub fn create_drop_image(
     let ref_width = measure_print_number(b"#00");
     let right_padding = TEXT_PADDING_FROM_EDGE - ref_width;
 
-    // Standard 'as i32' is strictly idiomatic compared to relying on custom casting traits
-    let left_print_x = (left_card_x + left_width) as i32 - right_padding - left_print_width;
-    let right_print_x = (right_card_x + right_width) as i32 - right_padding - right_print_width;
-    let print_y = total_height as i32 - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
+    let left_print_x = (left_card_x + left_width).cast_signed() - right_padding - left_print_width;
+    let right_print_x = (right_card_x + right_width).cast_signed() - right_padding - right_print_width;
+    let print_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_print_number(&mut final_image, left_print, Point::new(left_print_x, print_y));
-    draw_print_number(&mut final_image, right_print, Point::new(right_print_x, print_y));
+    draw_print_number(
+        &mut final_image,
+        left_print,
+        Point::new(left_print_x, print_y),
+    );
+    draw_print_number(
+        &mut final_image,
+        right_print,
+        Point::new(right_print_x, print_y),
+    );
 
     let print_time = start_print.elapsed();
     let start_encode = Instant::now();
