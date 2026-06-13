@@ -4,10 +4,10 @@ use webpx::{EncoderConfig, Preset, Unstoppable};
 use crate::renderer::{error::RenderError, pixels::RawCardImage};
 
 const WEBP_QUALITY: f32 = 85.0;
-const WEBP_SPEED: i32 = 0;
-const WEBP_ALPHA_QUALITY: i32 = 80;
-const WEBP_THREAD_LEVEL: i32 = 1;
-const WEBP_SEGMENTS: i32 = 1;
+const WEBP_SPEED: u8 = 0;
+const WEBP_ALPHA_QUALITY: u8 = 80;
+const WEBP_THREAD_LEVEL: u8 = 1;
+const WEBP_SEGMENTS: u8 = 1;
 
 /// we take raw pixels of two diff cards from moka cache
 /// paste it into canvas and draw print nums
@@ -31,16 +31,16 @@ pub fn encode_webp(image: &RawCardImage) -> Result<Bytes, RenderError> {
         // preset needs more testing to check which one is best for our cards
         .preset(Preset::Picture)
         .quality(WEBP_QUALITY)
-        .method(WEBP_SPEED as u8)
-        .thread_level(WEBP_THREAD_LEVEL as u8)
+        .method(WEBP_SPEED)
+        .thread_level(WEBP_THREAD_LEVEL)
         .alpha_compression(true)
-        .alpha_quality(WEBP_ALPHA_QUALITY as u8)
-        .low_memory(true)
+        .alpha_quality(WEBP_ALPHA_QUALITY)
+        .low_memory(false)
         .pass(1)
         .sns_strength(0)
         .filter_strength(0)
         .exact(false)
-        .segments(WEBP_SEGMENTS as u8);
+        .segments(WEBP_SEGMENTS);
 
     let webp_data: Vec<u8> = settings
         .encode_rgba(pixel_data, width, height, Unstoppable)
