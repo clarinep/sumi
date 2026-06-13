@@ -6,8 +6,6 @@ use super::pixels::{Point, RawCardImage};
 
 const TEXT_SIZE: f32 = 60.0;
 
-// normal font lib takes a while to render a letter.
-// so now we do this.
 struct Letter {
     coverage: Vec<u8>,
     width: u32,
@@ -22,7 +20,8 @@ struct LetterSet {
     digits: [Letter; 10],
 }
 
-// -- Load font sekali doang
+// yes only the bold 700 version of lexend deca is used.
+// https://fonts.google.com/selection?preview.script=Latn
 static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
     let font_data = include_bytes!("../../assets/LexendDeca-Bold.ttf") as &[u8];
     let font =
@@ -46,37 +45,26 @@ static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
 
     LetterSet {
         hash: render_char('#'),
-        digits: [
-            render_char('0'),
-            render_char('1'),
-            render_char('2'),
-            render_char('3'),
-            render_char('4'),
-            render_char('5'),
-            render_char('6'),
-            render_char('7'),
-            render_char('8'),
-            render_char('9'),
-        ],
+        digits: std::array::from_fn(|i| render_char((b'0' + i as u8) as char)),
     }
 });
 
 pub fn init_font() {
-    let _ = &*LETTERS;
+    LazyLock::force(&LETTERS);
 }
 
-/// here we manually do alpha blending of the fonts to the image pixel buffer.
-/// we do this manually instead of using a image processing library
-/// because it is a bitty faster and avoids useless overhead.
-/// we are simply manipulating the byte array for some tiny peformance gain
+// here we manually do alpha blending of the fonts to the image pixel buffer.
+// we do this manually instead of using a image processing library
+// because it is a bitty faster and avoids useless overhead.
+// we are simply manipulating the byte array for some tiny peformance gain
 #[inline]
 #[allow(clippy::many_single_char_names)]
 pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos: Point<i32>) {
-    let canvas_width = canvas.size.width.cast_signed();
-    let canvas_height = canvas.size.height.cast_signed();
+    let canvas_width = canvas.size.width as i32;
+    let canvas_height = canvas.size.height as i32;
     let canvas_buf = &mut canvas.pixels;
 
-    for b in print_number.iter().copied() {
+    for &b in print_number {
         // look up the letter
         // we only support 1-9 and #
         let letter = match b {
@@ -86,8 +74,8 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
         };
 
         // pre cast letter w h to i32 to avoid repeated casting
-        let letter_width = letter.width.cast_signed();
-        let letter_height = letter.height.cast_signed();
+        let letter_width = letter.width as i32;
+        let letter_height = letter.height as i32;
 
         // count the starting x and y coords for letter on the canvas
         let draw_y = pos.y + letter.offset_y;
@@ -110,14 +98,12 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
             }
 
             // canvas is rgba so its 4 bytes per pixel, coverage is 1 byte per pixel.
-            let canvas_pixel_start = usize::try_from(
-                (canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4,
-            )
-            .unwrap();
-            let letter_pixel_start =
-                usize::try_from(draw_y_offset * letter_width + draw_x_start).unwrap();
+            // use direct as usize instead of try_from().unwrap()
+            // we already bounds checked above so we know these are strictly >= 0
+            let canvas_pixel_start = ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4) as usize;
+            let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
+            let count = (draw_x_end - draw_x_start) as usize;
 
-            let count = usize::try_from(draw_x_end - draw_x_start).unwrap();
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
             let glyph_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
 
@@ -129,7 +115,6 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
                     let inv_fg_a = 255 - fg_a;
                     let bg_a = u32::from(pixel[3]);
 
-                    // Unpremultiplied RGBA blending:
                     // out_a = fg_a + bg_a * (255 - fg_a) / 255
                     let out_a_times_255 = fg_a * 255 + bg_a * inv_fg_a;
                     let out_a = out_a_times_255 / 255;
@@ -157,7 +142,7 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
 
 pub fn measure_print_number(print_number: &[u8]) -> i32 {
     let mut width = 0;
-    for b in print_number.iter().copied() {
+    for &b in print_number {
         let letter = match b {
             b'#' => &LETTERS.hash,
             b'0'..=b'9' => &LETTERS.digits[(b - b'0') as usize],
