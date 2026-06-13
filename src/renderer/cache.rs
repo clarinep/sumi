@@ -1,3 +1,8 @@
+// due to rng cache hit rate we'll try using read only caching strategies
+// pas startup kita warming cache sampe deket limit 2 gb terus freeze
+// di runtime klo hantam hit serve ga pake lock
+// klo miss kita decode dr disk tapi ga usah masukin cache biar ga rugi ram etc
+
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -5,11 +10,10 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        Arc,
+        Arc, RwLock,
     },
 };
 
-use moka::future::Cache;
 use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
 use webpx::decode_rgba;
 
@@ -18,12 +22,7 @@ use crate::renderer::{
     pixels::{self, RawCardImage},
 };
 
-// limit of images, moka will auto kick older images
-// moka uses LFU algorithm so if by rng a card smh keeps getting dropped then it will protect
-// and kick out other less "popular" card that was NATURALLY unlucky to not be chosen by blair.
-// -- Buat lebih konteks per kartu sekitar 200kb, kalau RAM kena cap kita turunin aja
-// -- Tapi kita sini pake raw rgba yg belum dikompres, sekitar 3 juta byte
-const MAX_CACHE_SIZE_KB: u64 = 2_000_000; // -- 2 GB limit in kilobyte
+const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 GB limit in kilobyte
 
 #[derive(Default, Debug)]
 pub struct CacheStats {
@@ -31,9 +30,9 @@ pub struct CacheStats {
     pub misses: AtomicU64,
 }
 
-/// hold cached image and list of file here
+// hold cached image and list of file here
 pub struct CardCache {
-    memory: Cache<Arc<str>, Arc<RawCardImage>>,
+    memory: Arc<RwLock<HashMap<Arc<str>, Arc<RawCardImage>>>>,
     file_index: Arc<HashMap<Arc<str>, PathBuf>>,
     pub stats: CacheStats,
 }
@@ -41,7 +40,6 @@ pub struct CardCache {
 impl Debug for CardCache {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("CardCache")
-            .field("memory", &self.memory)
             .field("file_index_len", &self.file_index.len())
             .field("stats", &self.stats)
             .finish()
@@ -49,55 +47,57 @@ impl Debug for CardCache {
 }
 
 impl CardCache {
-    /// sets up the cache and finds all images
+    // sets up the cache and finds all webp card images
     pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self, RenderError> {
         let file_index = Self::build_card_list(cards_directory.as_ref());
 
         if file_index.is_empty() {
             return Err(RenderError::Internal(
-                "found literally zero cards in the folder.. sumi is refusing to wake up"
-                    .to_string(),
+                "no cards found..? pls check or set path".to_string(),
             ));
         }
 
-        let cache = Cache::builder()
-            .max_capacity(MAX_CACHE_SIZE_KB)
-            .initial_capacity(file_index.len())
-            .weigher(|_key, value: &Arc<RawCardImage>| -> u32 {
-                // -- Cache di kilobytes biar bisa gampang ganti ke value gede
-                (value.pixels.len() / 1024) as u32
-            })
-            .build();
-
-        tracing::info!("found {} card images on disk", file_index.len());
-
-        Ok(Self { memory: cache, file_index: Arc::new(file_index), stats: CacheStats::default() })
+        Ok(Self {
+            memory: Arc::new(RwLock::new(HashMap::new())),
+            file_index: Arc::new(file_index),
+            stats: CacheStats::default(),
+        })
     }
 
-    /// makes a list of all image files in the folder
-    /// we check this list first so we dont waste time looking for missing files.
+    // makes a list of all image files in the folder
+    // we check this list first so we dont waste time looking for missing files.
+    // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
     fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, PathBuf> {
         fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, PathBuf>) {
-            if let Ok(entries) = fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        find_card(base_dir, &path, index);
-                    } else if path.extension().is_some_and(|e| e == "webp" || e == "ttf") {
-                        if let Ok(rel_path) = path.strip_prefix(base_dir) {
-                            let key_path = rel_path.with_extension("");
-                            let name_str = key_path.to_string_lossy().replace('\\', "/");
-                            index.insert(name_str.into(), path);
-                        }
+            let Ok(entries) = fs::read_dir(dir) else { return; };
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    find_card(base_dir, &path, index);
+                    continue;
+                }
+
+                let Some(ext) = path.extension().and_then(|s| s.to_str()) else { continue; };
+
+                if ext.eq_ignore_ascii_case("webp") {
+                    if let Ok(rel_path) = path.strip_prefix(base_dir) {
+                        let key_path = rel_path.with_extension("");
+                        let name_str = key_path.to_string_lossy().replace('\\', "/");
+                        index.insert(name_str.into(), path);
                     }
+                } else if matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg") {
+                    tracing::warn!("ignored '{}' (only webp supported)", path.display());
                 }
             }
         }
+
         let mut index = HashMap::new();
         find_card(cards_dir, cards_dir, &mut index);
         index
     }
 
+    // warm cache
     pub fn start_prewarm(&self) {
         if self.file_index.is_empty() {
             return;
@@ -106,44 +106,46 @@ impl CardCache {
         let file_index_clone = self.file_index.clone();
         let memory = self.memory.clone();
 
-        // warm cache
         spawn(async move {
-            tracing::info!("baking moka cache..");
+            tracing::info!("baking tinyufo cache..");
             let warmed = Arc::new(AtomicUsize::new(0));
             let warmed_kb = Arc::new(AtomicU64::new(0));
+            let warmed_disk_bytes = Arc::new(AtomicU64::new(0));
             let semaphore = Arc::new(Semaphore::new(8));
 
             for (name, path) in file_index_clone.iter() {
-                let name = name.clone();
-                // check if we reached 90% cap
+                // check if we reached 90% cap before spawning more work
                 let current_kb = warmed_kb.load(Ordering::Relaxed);
-                if current_kb > (MAX_CACHE_SIZE_KB * 9 / 10) {
-                    tracing::info!("cache prewarm reached capped limit, stopping!");
+                if current_kb > ((MAX_CACHE_SIZE_KB as u64) * 9 / 10) {
+                    tracing::info!("stopped baking (reached memory cap)");
                     break;
                 }
 
-                let Ok(file_bytes) = tokio_fs::read(&path).await else {
-                    continue;
+                let Ok(permit) = semaphore.clone().acquire_owned().await else {
+                    tracing::error!("failed baking (semaphore closed ?)");
+                    return;
                 };
 
-                // check if webp or not, also allow ttf for now.
-                if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
-                    if path.extension().is_none_or(|e| e != "ttf") {
-                        tracing::warn!(
-                            "file '{}' is not a valid webp image.. skipping decoding!",
-                            path.display()
-                        );
-                    }
-                    continue;
-                }
-
+                let name = name.clone();
+                let path = path.clone();
                 let memory = memory.clone();
                 let warmed = warmed.clone();
                 let warmed_kb = warmed_kb.clone();
-                let permit =
-                    semaphore.clone().acquire_owned().await.expect("semaphore unexpectedly closed");
+                let warmed_disk_bytes = warmed_disk_bytes.clone();
 
                 spawn(async move {
+                    let Ok(file_bytes) = tokio_fs::read(&path).await else {
+                        return;
+                    };
+
+                    // check if its webp or not.
+                    if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
+                        tracing::warn!("skipped '{}' (only webp supported)", path.display());
+                        return; 
+                    }
+
+                    let file_len = file_bytes.len() as u64;
+
                     let result = task::spawn_blocking(move || {
                         decode_rgba(&file_bytes).ok().map(|(pixels, width, height)| {
                             Arc::new(RawCardImage {
@@ -156,27 +158,34 @@ impl CardCache {
                     .unwrap_or(None);
 
                     if let Some(arc_img) = result {
-                        let size_kb = (arc_img.pixels.len() / 1024) as u64;
-                        memory.insert(name, arc_img).await;
+                        let size_kb = (arc_img.pixels.len() / 1024) as usize;
+                        if let Ok(mut guard) = memory.write() {
+                            guard.insert(name, arc_img);
+                        }
                         warmed.fetch_add(1, Ordering::Relaxed);
-                        warmed_kb.fetch_add(size_kb, Ordering::Relaxed);
+                        warmed_kb.fetch_add(size_kb as u64, Ordering::Relaxed);
+                        warmed_disk_bytes.fetch_add(file_len, Ordering::Relaxed);
                     }
-
-                    memory.run_pending_tasks().await;
+                    
                     drop(permit);
                 });
             }
 
-            let _ = semaphore.acquire_many(8).await.expect("semaphore unexpectedly closed");
+            if semaphore.acquire_many(8).await.is_err() {
+                tracing::error!("failed baking (semaphore closed ?)");
+            }
 
-            // slightly innacurate size as it counts the lexend deca .ttf file
+            let total_disk_bytes = warmed_disk_bytes.load(Ordering::Relaxed);
+            let mb = total_disk_bytes as f64 / 1_048_576.0;
+
             tracing::info!(
-                "finished baking {} cards - {} mb",
+                "finished baking {} cards [{:.2} mb]",
                 warmed.load(Ordering::Relaxed),
-                warmed_kb.load(Ordering::Relaxed) / 1024
+                mb
             );
         });
     }
+
     pub fn get_stats(&self) -> (u64, u64, f64) {
         let hits = self.stats.hits.load(Ordering::Relaxed);
         let misses = self.stats.misses.load(Ordering::Relaxed);
@@ -185,63 +194,54 @@ impl CardCache {
         (hits, misses, hit_rate)
     }
 
-    /// gets an image from cache.
-    /// -- Sekarang klo gak ada kartu di situ, kita load dari disk. akan lebih lemot.
+    // gets decoded card image from cache.
+    // cache miss baca dari disk langsung (juga ga dimasukin ke cache, liat line 31)
     pub async fn get_card(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
-        if let Some(img) = self.memory.get(name).await {
-            self.stats.hits.fetch_add(1, Ordering::Relaxed);
-            tracing::trace!("cache hit for {}", name);
-            return Ok(img);
+        // cari di memory duluan pake read lock
+        if let Ok(guard) = self.memory.read() {
+            if let Some(img) = guard.get(name) {
+                self.stats.hits.fetch_add(1, Ordering::Relaxed);
+                tracing::trace!("cache hit for {}", name);
+                return Ok(img.clone());
+            }
         }
 
         self.stats.misses.fetch_add(1, Ordering::Relaxed);
         tracing::trace!("cache miss for {}", name);
 
-        // a check on whether file exists before trying to read it
         let path = self
             .file_index
             .get(name)
             .cloned()
             .ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
 
-        let name_arc: Arc<str> = name.into();
+        let file_bytes = tokio_fs::read(&path).await.map_err(|e| {
+            RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
+        })?;
 
-        self.memory
-            .try_get_with(name_arc, async move {
-                let file_bytes = tokio_fs::read(&path).await.map_err(|e| {
-                    RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
-                })?;
+        if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
+            tracing::warn!("rejected '{}' (only webp supported)", path.display());
+            return Err(RenderError::Internal(format!("'{}' is not a webp", path.display())));
+        }
 
-                // reject non webp file
-                if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
-                    tracing::warn!(
-                        "sumi rejected file '{}' because its not a webp image..",
-                        path.display()
-                    );
-                    return Err(RenderError::Internal(format!(
-                        "file '{}' is not a webp file",
-                        path.display()
-                    )));
-                }
+        let arc_img = task::spawn_blocking(move || {
+            let (pixels, width, height) = decode_rgba(&file_bytes).map_err(|e| {
+                RenderError::Internal(format!(
+                    "failed to decode webp for '{}': {e:?}",
+                    path.display()
+                ))
+            })?;
 
-                task::spawn_blocking(move || {
-                    let (pixels, width, height) = decode_rgba(&file_bytes).map_err(|e| {
-                        RenderError::Internal(format!(
-                            "failed to decode webp for '{}': {e:?}",
-                            path.display()
-                        ))
-                    })?;
-
-                    let image = RawCardImage {
-                        size: pixels::Size::new(width, height),
-                        pixels: pixels.into_boxed_slice(),
-                    };
-                    Ok(Arc::new(image))
-                })
-                .await
-                .unwrap_or_else(|e| Err(RenderError::Internal(format!("task panicked: {e}"))))
-            })
-            .await
-            .map_err(|e| e.as_ref().clone())
+            let image = RawCardImage {
+                size: pixels::Size::new(width, height),
+                pixels: pixels.into_boxed_slice(),
+            };
+            Ok(Arc::new(image))
+        })
+        .await
+        .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))?
+        ?; 
+        
+        Ok(arc_img)
     }
 }
