@@ -24,9 +24,9 @@ pub struct RenderRequest {
     pub right_print: Option<u32>,
 }
 
-/// this is the main endpoint that handles requests to make our drop image.
-/// it takes the left and right card details and then ask sumi to combine them,
-/// and returns the drop image back to blair to the player.
+// this is the main endpoint that handles requests to make our drop image.
+// it takes the left and right card details and then ask sumi to combine them,
+// and returns the drop image back to blair to the player.
 pub async fn handle_render_drop(
     State(renderer): State<Arc<CardRenderer>>,
     Query(request): Query<RenderRequest>,
@@ -37,7 +37,7 @@ pub async fn handle_render_drop(
     let right_print = request.right_print.unwrap_or(1);
 
     tracing::debug!(
-        "starting render for {} (#{}) and {} (#{})",
+        "starting render..\n      left: {} (#{})\n      right: {} (#{})",
         request.left,
         left_print,
         request.right,
@@ -51,7 +51,7 @@ pub async fn handle_render_drop(
             let bytes_sent = image_data.len();
             renderer.stats.record(false);
             tracing::debug!(
-                "rendered: {}/{} ({:.3}ms) - {} bytes",
+                "rendered successfully\n      left: {}\n      right: {}\n      elapsed: {:.3}ms\n      size: {} bytes",
                 request.left,
                 request.right,
                 elapsed.as_secs_f64() * 1000.0,
@@ -77,9 +77,18 @@ pub async fn handle_render_drop(
             };
 
             if status == StatusCode::GATEWAY_TIMEOUT {
-                tracing::warn!("timeout: {}/{}", request.left, request.right);
+                tracing::warn!(
+                    "render timed out\n      left: {}\n      right: {}",
+                    request.left,
+                    request.right
+                );
             } else {
-                tracing::debug!("failed: {}/{} - {}", request.left, request.right, error_msg);
+                tracing::debug!(
+                    "render failed\n      left: {}\n      right: {}\n      reason: {}",
+                    request.left,
+                    request.right,
+                    error_msg
+                );
             }
 
             let json_resp = Json(json!({ "error": error_msg }));
@@ -88,7 +97,7 @@ pub async fn handle_render_drop(
     }
 }
 
-/// an endpoint for sumi stats and whether sumi died or not
+// an endpoint for sumi stats and whether sumi died or not
 pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
     let (cache_hits, cache_misses, cache_hit_rate) = renderer.card_cache.get_stats();
 
@@ -101,7 +110,7 @@ pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl I
 
     // some of the metrics will be removed in next updates as we dont use these anymore except uptime
     let json_resp = Json(json!({
-        "service": { "name": "sumi", "version": "1.1.0", "uptime_seconds": uptime },
+        "service": { "name": "sumi", "version": "1.2.0", "uptime_seconds": uptime },
         "cache": { "hits": cache_hits, "misses": cache_misses, "hit_rate_percent": cache_hit_rate },
         "requests": { "total": total, "errors": errors, "error_rate_percent": error_rate }
     }));
