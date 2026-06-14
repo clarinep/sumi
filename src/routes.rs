@@ -24,7 +24,7 @@ pub struct RenderRequest<'a> {
     pub right_print: Option<u32>,
 }
 
-fn decode_query_value(s: &str) -> Cow<'_, str> {
+fn fast_url_decode(s: &str) -> Cow<'_, str> {
     if !s.contains('%') && !s.contains('+') {
         return Cow::Borrowed(s);
     }
@@ -54,7 +54,7 @@ fn decode_query_value(s: &str) -> Cow<'_, str> {
     String::from_utf8(bytes).map(Cow::Owned).unwrap_or_else(|_| Cow::Borrowed(s))
 }
 
-fn parse_query(query: &str) -> Result<RenderRequest<'_>, &'static str> {
+fn parse_render_query(query: &str) -> Result<RenderRequest<'_>, &'static str> {
     let mut left = None;
     let mut right = None;
     let mut left_print = None;
@@ -69,8 +69,8 @@ fn parse_query(query: &str) -> Result<RenderRequest<'_>, &'static str> {
         let value = split.next().unwrap_or("");
 
         match key {
-            "left" => left = Some(decode_query_value(value)),
-            "right" => right = Some(decode_query_value(value)),
+            "left" => left = Some(fast_url_decode(value)),
+            "right" => right = Some(fast_url_decode(value)),
             "left_print" => left_print = value.parse().ok(),
             "right_print" => right_print = value.parse().ok(),
             _ => {}
@@ -96,7 +96,7 @@ pub async fn handle_render_drop(
     let start = Instant::now();
     let query_str = uri.query().unwrap_or("");
     
-    let request = match parse_query(query_str) {
+    let request = match parse_render_query(query_str) {
         Ok(req) => req,
         Err(msg) => return (StatusCode::BAD_REQUEST, msg.to_string()).into_response(),
     };
