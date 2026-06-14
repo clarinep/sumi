@@ -10,21 +10,79 @@ use axum::{
     http::{StatusCode, header},
     response::IntoResponse,
 };
-use serde::Deserialize;
 use serde_json::json;
 
 use crate::renderer::{CardRenderer, error::RenderError};
 
 // the data we expect when blair asks for an image.
 // we need character name from its filename and also print nums
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct RenderRequest<'a> {
-    #[serde(borrow)]
     pub left: Cow<'a, str>,
-    #[serde(borrow)]
     pub right: Cow<'a, str>,
     pub left_print: Option<u32>,
     pub right_print: Option<u32>,
+}
+
+fn decode_query_value(s: &str) -> Cow<'_, str> {
+    if !s.contains('%') && !s.contains('+') {
+        return Cow::Borrowed(s);
+    }
+    let mut bytes = Vec::with_capacity(s.len());
+    let s_bytes = s.as_bytes();
+    let mut i = 0;
+    while i < s_bytes.len() {
+        let b = s_bytes[i];
+        if b == b'+' {
+            bytes.push(b' ');
+            i += 1;
+        } else if b == b'%' && i + 2 < s_bytes.len() {
+            let h1 = (s_bytes[i + 1] as char).to_digit(16);
+            let h2 = (s_bytes[i + 2] as char).to_digit(16);
+            if let (Some(h1), Some(h2)) = (h1, h2) {
+                bytes.push((h1 << 4 | h2) as u8);
+                i += 3;
+            } else {
+                bytes.push(b);
+                i += 1;
+            }
+        } else {
+            bytes.push(b);
+            i += 1;
+        }
+    }
+    String::from_utf8(bytes).map(Cow::Owned).unwrap_or_else(|_| Cow::Borrowed(s))
+}
+
+fn parse_query(query: &str) -> Result<RenderRequest<'_>, &'static str> {
+    let mut left = None;
+    let mut right = None;
+    let mut left_print = None;
+    let mut right_print = None;
+
+    for part in query.split('&') {
+        if part.is_empty() {
+            continue;
+        }
+        let mut split = part.splitn(2, '=');
+        let key = split.next().unwrap();
+        let value = split.next().unwrap_or("");
+
+        match key {
+            "left" => left = Some(decode_query_value(value)),
+            "right" => right = Some(decode_query_value(value)),
+            "left_print" => left_print = value.parse().ok(),
+            "right_print" => right_print = value.parse().ok(),
+            _ => {}
+        }
+    }
+
+    Ok(RenderRequest {
+        left: left.ok_or("missing left parameter")?,
+        right: right.ok_or("missing right parameter")?,
+        left_print,
+        right_print,
+    })
 }
 
 // this is the main endpoint that handles requests to make our drop image.
@@ -37,9 +95,10 @@ pub async fn handle_render_drop(
     // start a timer so we know how long this request takes
     let start = Instant::now();
     let query_str = uri.query().unwrap_or("");
-    let request: RenderRequest = match serde_urlencoded::from_str(query_str) {
+    
+    let request = match parse_query(query_str) {
         Ok(req) => req,
-        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid query".to_string()).into_response(),
+        Err(msg) => return (StatusCode::BAD_REQUEST, msg.to_string()).into_response(),
     };
 
     let left_print = request.left_print.unwrap_or(1);
