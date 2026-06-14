@@ -1,88 +1,27 @@
 use std::{
-    borrow::Cow,
     sync::{Arc, atomic::Ordering},
     time::Instant,
 };
 
 use axum::{
     Json,
-    extract::{OriginalUri, State},
+    extract::{Query, State},
     http::{StatusCode, header},
     response::IntoResponse,
 };
+use serde::Deserialize;
 use serde_json::json;
 
 use crate::renderer::{CardRenderer, error::RenderError};
 
 // the data we expect when blair asks for an image.
 // we need character name from its filename and also print nums
-#[derive(Debug)]
-pub struct RenderRequest<'a> {
-    pub left: Cow<'a, str>,
-    pub right: Cow<'a, str>,
+#[derive(Debug, Deserialize)]
+pub struct RenderRequest {
+    pub left: String,
+    pub right: String,
     pub left_print: Option<u32>,
     pub right_print: Option<u32>,
-}
-
-fn fast_url_decode(s: &str) -> Cow<'_, str> {
-    if !s.contains('%') && !s.contains('+') {
-        return Cow::Borrowed(s);
-    }
-    let mut bytes = Vec::with_capacity(s.len());
-    let s_bytes = s.as_bytes();
-    let mut i = 0;
-    while i < s_bytes.len() {
-        let b = s_bytes[i];
-        if b == b'+' {
-            bytes.push(b' ');
-            i += 1;
-        } else if b == b'%' && i + 2 < s_bytes.len() {
-            let h1 = (s_bytes[i + 1] as char).to_digit(16);
-            let h2 = (s_bytes[i + 2] as char).to_digit(16);
-            if let (Some(h1), Some(h2)) = (h1, h2) {
-                bytes.push((h1 << 4 | h2) as u8);
-                i += 3;
-            } else {
-                bytes.push(b);
-                i += 1;
-            }
-        } else {
-            bytes.push(b);
-            i += 1;
-        }
-    }
-    String::from_utf8(bytes).map_or_else(|_| Cow::Borrowed(s), Cow::Owned)
-}
-
-fn parse_render_query(query: &str) -> Result<RenderRequest<'_>, &'static str> {
-    let mut left = None;
-    let mut right = None;
-    let mut left_print = None;
-    let mut right_print = None;
-
-    for part in query.split('&') {
-        if part.is_empty() {
-            continue;
-        }
-        let mut split = part.splitn(2, '=');
-        let key = split.next().unwrap();
-        let value = split.next().unwrap_or("");
-
-        match key {
-            "left" => left = Some(fast_url_decode(value)),
-            "right" => right = Some(fast_url_decode(value)),
-            "left_print" => left_print = value.parse().ok(),
-            "right_print" => right_print = value.parse().ok(),
-            _ => {}
-        }
-    }
-
-    Ok(RenderRequest {
-        left: left.ok_or("missing left parameter")?,
-        right: right.ok_or("missing right parameter")?,
-        left_print,
-        right_print,
-    })
 }
 
 // this is the main endpoint that handles requests to make our drop image.
@@ -90,17 +29,10 @@ fn parse_render_query(query: &str) -> Result<RenderRequest<'_>, &'static str> {
 // and returns the drop image back to blair to the player.
 pub async fn handle_render_drop(
     State(renderer): State<Arc<CardRenderer>>,
-    OriginalUri(uri): OriginalUri,
+    Query(request): Query<RenderRequest>,
 ) -> impl IntoResponse {
     // start a timer so we know how long this request takes
     let start = Instant::now();
-    let query_str = uri.query().unwrap_or("");
-
-    let request = match parse_render_query(query_str) {
-        Ok(req) => req,
-        Err(msg) => return (StatusCode::BAD_REQUEST, msg.to_string()).into_response(),
-    };
-
     let left_print = request.left_print.unwrap_or(1);
     let right_print = request.right_print.unwrap_or(1);
 
