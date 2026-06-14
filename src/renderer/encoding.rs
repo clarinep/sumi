@@ -6,7 +6,7 @@ use crate::renderer::{error::RenderError, pixels::RawCardImage};
 const WEBP_QUALITY: f32 = 85.0;
 const WEBP_SPEED: u8 = 0;
 const WEBP_ALPHA_QUALITY: u8 = 80;
-const WEBP_THREAD_LEVEL: u8 = 1;
+const WEBP_THREAD_LEVEL: u8 = 0;
 const WEBP_SEGMENTS: u8 = 1;
 
 /// we take raw pixels of two diff cards from moka cache
