@@ -84,10 +84,17 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
                 continue;
             }
 
-            let canvas_pixel_start =
-                ((canvas_y * canvas_width + (pos.x + letter.offset_x + draw_x_start)) * 4) as usize;
-            let letter_pixel_start = (draw_y_offset * letter_width + draw_x_start) as usize;
-            let count = (draw_x_end - draw_x_start) as usize;
+            let canvas_y_u = usize::try_from(canvas_y).unwrap();
+            let canvas_width_u = usize::try_from(canvas_width).unwrap();
+            let canvas_x_u = usize::try_from(pos.x + letter.offset_x + draw_x_start).unwrap();
+            let canvas_pixel_start = (canvas_y_u * canvas_width_u + canvas_x_u) * 4;
+
+            let draw_y_offset_u = usize::try_from(draw_y_offset).unwrap();
+            let letter_width_u = usize::try_from(letter_width).unwrap();
+            let draw_x_start_u = usize::try_from(draw_x_start).unwrap();
+            let letter_pixel_start = draw_y_offset_u * letter_width_u + draw_x_start_u;
+
+            let count = usize::try_from(draw_x_end - draw_x_start).unwrap();
 
             let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
             let glyph_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
