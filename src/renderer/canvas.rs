@@ -89,8 +89,8 @@ pub fn create_drop_image(
         (right_card_x + right_width).cast_signed() - right_padding - right_print_width;
     let print_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_print_number(&mut final_image, left_print, Point::new(left_print_x, print_y));
-    draw_print_number(&mut final_image, right_print, Point::new(right_print_x, print_y));
+    draw_print_number(&mut final_image, left_print, Point::new(left_print_x, print_y))?;
+    draw_print_number(&mut final_image, right_print, Point::new(right_print_x, print_y))?;
 
     let print_time = start_print.elapsed();
     let start_encode = Instant::now();
