@@ -54,7 +54,7 @@ pub struct CardRenderer {
 
 impl CardRenderer {
     pub fn new(cards_directory: impl Into<PathBuf>) -> Result<Self, RenderError> {
-        let cores = thread::available_parallelism().map_or(4, NonZero::get);
+        let cores = thread::available_parallelism().map_or(4, NonZero::get) * 2;
         tracing::info!("sumi woke up with [{cores} cpu cores]");
         init_font();
 
