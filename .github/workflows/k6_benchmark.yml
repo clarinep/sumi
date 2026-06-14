@@ -14,7 +14,7 @@ jobs:
         run: cargo build --release
       - name: Make cards.txt from assets folder
         run: |
-          find assets -type f \( -name "*.webp" -o -name "*.png" \) | sed 's|^assets/||' | sed -E 's/\.(webp|png)$//' > cards.txt
+          find assets -type f \( -name "*.webp" \) | sed 's|^assets/||' | sed -E 's/\.(webp|png)$//' > cards.txt
       - name: Start sumi server
         env:
           CARDS_DIR: "assets"
