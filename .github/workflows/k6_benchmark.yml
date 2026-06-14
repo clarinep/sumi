@@ -1,0 +1,31 @@
+name: k6 Benchmark
+on:
+  workflow_dispatch:
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rust
+        run: rustup toolchain install stable
+      - name: Cache rust environment
+        uses: Swatinem/rust-cache@v2
+      - name: Build sumi
+        run: cargo build --release
+      - name: Make cards.txt from assets folder
+        run: |
+          find assets -type f \( -name "*.webp" -o -name "*.png" \) | sed 's|assets/||' | sed -E 's|\.(webp|png)||' > cards.txt
+      - name: Start sumi server
+        env:
+          CARDS_DIR: "assets"
+          PORT: 3000
+          RUST_LOG: error
+        run: |
+          ./target/release/sumi > sumi.log 2>&1 &
+          sleep 3
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+      - name: Run k6 benchmark
+        env:
+          BASE_URL: "http://localhost:3000"
+        run: k6 run benchmark.js
