@@ -127,9 +127,12 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
                         let g = u32::from(pixel[1]);
                         let b = u32::from(pixel[2]);
 
-                        pixel[0] = ((255 * fg_a * 255 + r * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
-                        pixel[1] = ((255 * fg_a * 255 + g * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
-                        pixel[2] = ((255 * fg_a * 255 + b * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
+                        pixel[0] =
+                            ((255 * fg_a * 255 + r * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
+                        pixel[1] =
+                            ((255 * fg_a * 255 + g * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
+                        pixel[2] =
+                            ((255 * fg_a * 255 + b * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
                         pixel[3] = out_a as u8;
                     }
                 }

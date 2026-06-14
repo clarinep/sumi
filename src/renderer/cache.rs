@@ -213,10 +213,8 @@ impl CardCache {
         self.stats.misses.fetch_add(1, Ordering::Relaxed);
         tracing::trace!("cache miss for {}", name);
 
-        let path = self
-            .file_index
-            .get(name)
-            .ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
+        let path =
+            self.file_index.get(name).ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
 
         let file_bytes = tokio_fs::read(path).await.map_err(|e| {
             RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))

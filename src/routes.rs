@@ -51,7 +51,7 @@ fn fast_url_decode(s: &str) -> Cow<'_, str> {
             i += 1;
         }
     }
-    String::from_utf8(bytes).map(Cow::Owned).unwrap_or_else(|_| Cow::Borrowed(s))
+    String::from_utf8(bytes).map_or_else(|_| Cow::Borrowed(s), Cow::Owned)
 }
 
 fn parse_render_query(query: &str) -> Result<RenderRequest<'_>, &'static str> {
@@ -95,7 +95,7 @@ pub async fn handle_render_drop(
     // start a timer so we know how long this request takes
     let start = Instant::now();
     let query_str = uri.query().unwrap_or("");
-    
+
     let request = match parse_render_query(query_str) {
         Ok(req) => req,
         Err(msg) => return (StatusCode::BAD_REQUEST, msg.to_string()).into_response(),

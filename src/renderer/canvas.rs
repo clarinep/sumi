@@ -72,16 +72,16 @@ pub fn create_drop_image(
     let mut left_print_buf = [0u8; 32];
     left_print_buf[0] = b'#';
     let mut left_cursor = std::io::Cursor::new(&mut left_print_buf[1..]);
-    let _ = write!(left_cursor, "{}", left_card_print);
+    let _ = write!(left_cursor, "{left_card_print}");
     let left_written = left_cursor.position() as usize;
-    let left_print = &left_print_buf[..1 + left_written];
+    let left_print = &left_print_buf[..=left_written];
 
     let mut right_print_buf = [0u8; 32];
     right_print_buf[0] = b'#';
     let mut right_cursor = std::io::Cursor::new(&mut right_print_buf[1..]);
-    let _ = write!(right_cursor, "{}", right_card_print);
+    let _ = write!(right_cursor, "{right_card_print}");
     let right_written = right_cursor.position() as usize;
-    let right_print = &right_print_buf[..1 + right_written];
+    let right_print = &right_print_buf[..=right_written];
 
     let canvas_time = start_canvas.elapsed();
     let start_print = Instant::now();
