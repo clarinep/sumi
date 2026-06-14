@@ -2,6 +2,7 @@ use std::sync::LazyLock;
 
 use fontdue::{Font, FontSettings};
 
+use super::error::RenderError;
 use super::pixels::{Point, RawCardImage};
 
 const TEXT_SIZE: f32 = 60.0;
@@ -53,7 +54,7 @@ pub fn init_font() {
 
 #[inline]
 #[allow(clippy::many_single_char_names)]
-pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos: Point<i32>) {
+pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos: Point<i32>) -> Result<(), RenderError> {
     let canvas_width = canvas.size.width.cast_signed();
     let canvas_height = canvas.size.height.cast_signed();
     let canvas_buf = &mut canvas.pixels;
@@ -84,20 +85,35 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
                 continue;
             }
 
-            let canvas_row_idx = usize::try_from(canvas_y).unwrap();
-            let canvas_w = usize::try_from(canvas_width).unwrap();
-            let canvas_col_idx = usize::try_from(pos.x + letter.offset_x + draw_x_start).unwrap();
+            let canvas_row_idx = usize::try_from(canvas_y)
+                .map_err(|e| RenderError::Internal(format!("Failed to convert canvas row index: {e}")))?;
+            let canvas_w = usize::try_from(canvas_width)
+                .map_err(|e| RenderError::Internal(format!("Failed to convert canvas width: {e}")))?;
+            let canvas_col_idx = usize::try_from(pos.x + letter.offset_x + draw_x_start)
+                .map_err(|e| RenderError::Internal(format!("Failed to convert canvas column index: {e}")))?;
             let canvas_pixel_start = (canvas_row_idx * canvas_w + canvas_col_idx) * 4;
 
-            let letter_row_idx = usize::try_from(draw_y_offset).unwrap();
-            let letter_w = usize::try_from(letter_width).unwrap();
-            let letter_col_idx = usize::try_from(draw_x_start).unwrap();
+            let letter_row_idx = usize::try_from(draw_y_offset)
+                .map_err(|e| RenderError::Internal(format!("Failed to convert letter row index: {e}")))?;
+            let letter_w = usize::try_from(letter_width)
+                .map_err(|e| RenderError::Internal(format!("Failed to convert letter width: {e}")))?;
+            let letter_col_idx = usize::try_from(draw_x_start)
+                .map_err(|e| RenderError::Internal(format!("Failed to convert letter column index: {e}")))?;
             let letter_pixel_start = letter_row_idx * letter_w + letter_col_idx;
 
-            let count = usize::try_from(draw_x_end - draw_x_start).unwrap();
+            let count = usize::try_from(draw_x_end - draw_x_start)
+                .map_err(|e| RenderError::Internal(format!("Failed to convert pixel transfer count: {e}")))?;
 
-            let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_start + count * 4];
-            let letter_row = &letter.coverage[letter_pixel_start..letter_pixel_start + count];
+            let canvas_pixel_end = canvas_pixel_start + count * 4;
+            let letter_pixel_end = letter_pixel_start + count;
+
+            let target_pixels = canvas_buf
+                .get_mut(canvas_pixel_start..canvas_pixel_end)
+                .ok_or_else(|| RenderError::Internal("Canvas pixel range out of bounds".to_string()))?;
+            let letter_row = letter
+                .coverage
+                .get(letter_pixel_start..letter_pixel_end)
+                .ok_or_else(|| RenderError::Internal("Letter coverage range out of bounds".to_string()))?;
 
             for (pixel, &coverage) in target_pixels.chunks_exact_mut(4).zip(letter_row) {
                 if coverage == 255 {
@@ -128,6 +144,7 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
 
         pos.x += letter.advance_width;
     }
+    Ok(())
 }
 
 pub fn measure_print_number(print_number: &[u8]) -> i32 {
