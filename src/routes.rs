@@ -1,11 +1,12 @@
 use std::{
+    borrow::Cow,
     sync::{Arc, atomic::Ordering},
     time::Instant,
 };
 
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{OriginalUri, State},
     http::{StatusCode, header},
     response::IntoResponse,
 };
@@ -17,9 +18,11 @@ use crate::renderer::{CardRenderer, error::RenderError};
 // the data we expect when blair asks for an image.
 // we need character name from its filename and also print nums
 #[derive(Debug, Deserialize)]
-pub struct RenderRequest {
-    pub left: String,
-    pub right: String,
+pub struct RenderRequest<'a> {
+    #[serde(borrow)]
+    pub left: Cow<'a, str>,
+    #[serde(borrow)]
+    pub right: Cow<'a, str>,
     pub left_print: Option<u32>,
     pub right_print: Option<u32>,
 }
@@ -29,10 +32,16 @@ pub struct RenderRequest {
 // and returns the drop image back to blair to the player.
 pub async fn handle_render_drop(
     State(renderer): State<Arc<CardRenderer>>,
-    Query(request): Query<RenderRequest>,
+    OriginalUri(uri): OriginalUri,
 ) -> impl IntoResponse {
     // start a timer so we know how long this request takes
     let start = Instant::now();
+    let query_str = uri.query().unwrap_or("");
+    let request: RenderRequest = match serde_urlencoded::from_str(query_str) {
+        Ok(req) => req,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid query".to_string()).into_response(),
+    };
+
     let left_print = request.left_print.unwrap_or(1);
     let right_print = request.right_print.unwrap_or(1);
 
