@@ -7,7 +7,7 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Formatter, Result as FmtResult},
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc, RwLock,
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -33,7 +33,7 @@ pub struct CacheStats {
 // hold cached image and list of file here
 pub struct CardCache {
     memory: Arc<RwLock<HashMap<Arc<str>, Arc<RawCardImage>>>>,
-    file_index: Arc<HashMap<Arc<str>, Arc<Path>>>,
+    file_index: Arc<HashMap<Arc<str>, PathBuf>>,
     pub stats: CacheStats,
 }
 
@@ -67,8 +67,8 @@ impl CardCache {
     // makes a list of all image files in the folder
     // we check this list first so we dont waste time looking for missing files.
     // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
-    fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, Arc<Path>> {
-        fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, Arc<Path>>) {
+    fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, PathBuf> {
+        fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, PathBuf>) {
             let Ok(entries) = fs::read_dir(dir) else {
                 return;
             };
@@ -88,7 +88,7 @@ impl CardCache {
                     if let Ok(rel_path) = path.strip_prefix(base_dir) {
                         let key_path = rel_path.with_extension("");
                         let name_str = key_path.to_string_lossy().replace('\\', "/");
-                        index.insert(name_str.into(), path.into());
+                        index.insert(name_str.into(), path);
                     }
                 } else if matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg") {
                     tracing::warn!("ignored '{}' (only webp supported)", path.display());
@@ -213,10 +213,13 @@ impl CardCache {
         self.stats.misses.fetch_add(1, Ordering::Relaxed);
         tracing::trace!("cache miss for {}", name);
 
-        let path =
-            self.file_index.get(name).ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
+        let path = self
+            .file_index
+            .get(name)
+            .cloned()
+            .ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
 
-        let file_bytes = tokio_fs::read(path).await.map_err(|e| {
+        let file_bytes = tokio_fs::read(&path).await.map_err(|e| {
             RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
         })?;
 
@@ -225,12 +228,11 @@ impl CardCache {
             return Err(RenderError::Internal(format!("'{}' is not a webp", path.display())));
         }
 
-        let path_clone = path.clone();
         let arc_img = task::spawn_blocking(move || {
             let (pixels, width, height) = decode_rgba(&file_bytes).map_err(|e| {
                 RenderError::Internal(format!(
                     "failed to decode webp for '{}': {e:?}",
-                    path_clone.display()
+                    path.display()
                 ))
             })?;
 
