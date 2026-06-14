@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let welcomer = include_str!("ascii.txt");
     println!();
     for line in welcomer.lines() {
-        println!("\x1b[38;2;241;138;131m{}\x1b[0m", line);
+        println!("\x1b[38;2;241;138;131m{line}\x1b[0m");
     }
 
     let cfg = Config::load();
