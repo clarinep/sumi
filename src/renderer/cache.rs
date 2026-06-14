@@ -7,7 +7,7 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Formatter, Result as FmtResult},
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
         Arc, RwLock,
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -227,11 +227,12 @@ impl CardCache {
             return Err(RenderError::Internal(format!("'{}' is not a webp", path.display())));
         }
 
+        let path_clone = path.clone();
         let arc_img = task::spawn_blocking(move || {
             let (pixels, width, height) = decode_rgba(&file_bytes).map_err(|e| {
                 RenderError::Internal(format!(
                     "failed to decode webp for '{}': {e:?}",
-                    path.display()
+                    path_clone.display()
                 ))
             })?;
 
