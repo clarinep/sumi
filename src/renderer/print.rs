@@ -98,23 +98,40 @@ pub fn draw_print_number(canvas: &mut RawCardImage, print_number: &[u8], mut pos
                 } else if coverage > 0 {
                     let fg_a = u32::from(coverage);
                     let inv_fg_a = 255 - fg_a;
-                    let bg_a = u32::from(pixel[3]);
+                    let bg_a = pixel[3];
 
-                    let out_a_times_255 = fg_a * 255 + bg_a * inv_fg_a;
-                    let out_a = out_a_times_255 / 255;
+                    if bg_a == 255 {
+                        let r = u32::from(pixel[0]);
+                        let g = u32::from(pixel[1]);
+                        let b = u32::from(pixel[2]);
 
-                    if out_a == 0 {
-                        continue;
+                        pixel[0] = ((fg_a * 255 + r * inv_fg_a) / 255) as u8;
+                        pixel[1] = ((fg_a * 255 + g * inv_fg_a) / 255) as u8;
+                        pixel[2] = ((fg_a * 255 + b * inv_fg_a) / 255) as u8;
+                        pixel[3] = 255;
+                    } else if bg_a == 0 {
+                        pixel[0] = 255;
+                        pixel[1] = 255;
+                        pixel[2] = 255;
+                        pixel[3] = coverage;
+                    } else {
+                        let bg_a_u32 = u32::from(bg_a);
+                        let out_a_times_255 = fg_a * 255 + bg_a_u32 * inv_fg_a;
+                        let out_a = out_a_times_255 / 255;
+
+                        if out_a == 0 {
+                            continue;
+                        }
+
+                        let r = u32::from(pixel[0]);
+                        let g = u32::from(pixel[1]);
+                        let b = u32::from(pixel[2]);
+
+                        pixel[0] = ((255 * fg_a * 255 + r * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
+                        pixel[1] = ((255 * fg_a * 255 + g * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
+                        pixel[2] = ((255 * fg_a * 255 + b * bg_a_u32 * inv_fg_a) / out_a_times_255) as u8;
+                        pixel[3] = out_a as u8;
                     }
-
-                    let r = u32::from(pixel[0]);
-                    let g = u32::from(pixel[1]);
-                    let b = u32::from(pixel[2]);
-
-                    pixel[0] = ((255 * fg_a * 255 + r * bg_a * inv_fg_a) / out_a_times_255) as u8;
-                    pixel[1] = ((255 * fg_a * 255 + g * bg_a * inv_fg_a) / out_a_times_255) as u8;
-                    pixel[2] = ((255 * fg_a * 255 + b * bg_a * inv_fg_a) / out_a_times_255) as u8;
-                    pixel[3] = out_a as u8;
                 }
             }
         }
