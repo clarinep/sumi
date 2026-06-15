@@ -15,9 +15,8 @@ use std::{
 
 use ahash::RandomState;
 use dashmap::DashMap;
-
 use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
-use webpx::{Decoder, DecoderConfig};
+use webpx::Decoder;
 
 use crate::renderer::{
     error::RenderError,
@@ -153,9 +152,9 @@ impl CardAtlas {
                     let file_len = file_bytes.len() as u64;
 
                     let result = task::spawn_blocking(move || {
-                        let decode_res = Decoder::new(&file_bytes)
-                            .and_then(|d| d.decode_rgba_raw());
-                        
+                        let decode_res =
+                            Decoder::new(&file_bytes).and_then(webpx::Decoder::decode_rgba_raw);
+
                         decode_res.ok().map(|(pixels, width, height)| {
                             Arc::new(RawCardImage {
                                 size: pixels::Size::new(width, height),
@@ -238,11 +237,11 @@ impl CardAtlas {
                 })?
                 .decode_rgba_raw()
                 .map_err(|e| {
-                RenderError::Internal(format!(
-                    "failed to decode webp for '{}': {e:?}",
-                    path.display()
-                ))
-            })?;
+                    RenderError::Internal(format!(
+                        "failed to decode webp for '{}': {e:?}",
+                        path.display()
+                    ))
+                })?;
 
             let image = RawCardImage {
                 size: pixels::Size::new(width, height),

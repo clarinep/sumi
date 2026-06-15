@@ -16,8 +16,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytes::Bytes;
 use atlas::CardAtlas;
+use bytes::Bytes;
 use canvas::create_drop_image;
 use error::RenderError;
 use print::init_font;
