@@ -1,15 +1,15 @@
 use bytes::Bytes;
-use webpx::{EncoderConfig, Preset, Unstoppable};
+use webpx::{AlphaFilter, EncoderConfig, Preset, Unstoppable};
 
 use crate::renderer::{error::RenderError, pixels::RawCardImage};
 
 const WEBP_QUALITY: f32 = 85.0;
 const WEBP_SPEED: u8 = 0;
 const WEBP_ALPHA_QUALITY: u8 = 80;
-const WEBP_THREAD_LEVEL: u8 = 1;
-const WEBP_SEGMENTS: u8 = 4;
+const WEBP_THREAD_LEVEL: u8 = 0;
+const WEBP_SEGMENTS: u8 = 1;
 
-/// we take raw pixels of two diff cards from moka cache
+/// we take raw pixels of two diff cards from atlas (memory)
 /// paste it into canvas and draw print nums
 /// but because of that huge amount of alpha pixels and bigger image dimension
 /// now if we send that pixels data over to discord, lets just say the file size would be 2 MB
@@ -30,16 +30,17 @@ pub fn encode_webp(image: &RawCardImage) -> Result<Bytes, RenderError> {
     let settings = EncoderConfig::new()
         // preset needs more testing to check which one is best for our cards
         .preset(Preset::Picture)
+        .hint(webpx::ImageHint::Picture)
         .quality(WEBP_QUALITY)
         .method(WEBP_SPEED)
         .thread_level(WEBP_THREAD_LEVEL)
         .alpha_compression(true)
         .alpha_quality(WEBP_ALPHA_QUALITY)
+        .alpha_filter(AlphaFilter::None) // none filter maximizes alpha encoding throughput
         .low_memory(false)
         .pass(1)
-        .sns_strength(0)
-        .filter_strength(0)
         .exact(false)
+        .partitions(3) // 3 = 8 partitions, unlocks parallel decoding for clients and parallelizes entropy stage
         .segments(WEBP_SEGMENTS);
 
     let webp_data: Vec<u8> = settings
