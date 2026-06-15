@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use std::time::Instant;
 
 use bytes::Bytes;
@@ -5,7 +6,7 @@ use bytes::Bytes;
 use super::{
     encoding::encode_webp,
     error::RenderError,
-    pixels::{Point, RawCardImage, Size},
+    pixels::{Point, RawCardImage},
     print::{draw_print_number, measure_print_number},
 };
 
@@ -27,6 +28,8 @@ fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, po
         dest_row[..card_row_bytes].copy_from_slice(src_row);
     }
 }
+
+static DROP_POOL: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
 
 // combine two card images and add print numbers = drop image
 // we manually copy pixel rows from the card images. this is much faster
@@ -50,9 +53,13 @@ pub fn create_drop_image(
     // make sure buffer big enough for image (width * height * 4 bytes per pixel).
     let required_len = (total_width * total_height * 4) as usize;
 
-    // We can just use the standard vec! macro.
-    // This removes need for unsafe block here and is optimized by compiler.
-    let mut buffer: Vec<u8> = vec![0; required_len];
+    let mut buffer = DROP_POOL.lock().unwrap().pop().unwrap_or_else(Vec::new);
+    if buffer.len() < required_len {
+        buffer.resize(required_len, 0);
+    } else {
+        // zero out only what we use to ensure transparency between cards is clean
+        buffer[..required_len].fill(0);
+    }
 
     // count starting position for the left and right card.
     let left_card_x = PADDING_BETWEEN_CARDS;
@@ -63,16 +70,23 @@ pub fn create_drop_image(
     copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
     copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
 
-    // wrap the buffer into RawCardImage so we can pass it to the encoder etc
-    let mut final_image = RawCardImage {
-        size: Size::new(total_width, total_height),
-        pixels: buffer.into_boxed_slice(),
-    };
+    let mut left_itoa = itoa::Buffer::new();
+    let left_print_str = left_itoa.format(left_card_print);
+    
+    let mut left_print_buf = [0u8; 32];
+    left_print_buf[0] = b'#';
+    let left_print_len = 1 + left_print_str.len();
+    left_print_buf[1..left_print_len].copy_from_slice(left_print_str.as_bytes());
+    let left_print = &left_print_buf[..left_print_len];
 
-    let left_print_str = format!("#{left_card_print}");
-    let left_print = left_print_str.as_bytes();
-    let right_print_str = format!("#{right_card_print}");
-    let right_print = right_print_str.as_bytes();
+    let mut right_itoa = itoa::Buffer::new();
+    let right_print_str = right_itoa.format(right_card_print);
+    
+    let mut right_print_buf = [0u8; 32];
+    right_print_buf[0] = b'#';
+    let right_print_len = 1 + right_print_str.len();
+    right_print_buf[1..right_print_len].copy_from_slice(right_print_str.as_bytes());
+    let right_print = &right_print_buf[..right_print_len];
 
     let canvas_time = start_canvas.elapsed();
     let start_print = Instant::now();
@@ -89,14 +103,14 @@ pub fn create_drop_image(
         (right_card_x + right_width).cast_signed() - right_padding - right_print_width;
     let print_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_print_number(&mut final_image, left_print, Point::new(left_print_x, print_y))?;
-    draw_print_number(&mut final_image, right_print, Point::new(right_print_x, print_y))?;
+    draw_print_number(total_width, total_height, &mut buffer[..required_len], left_print, Point::new(left_print_x, print_y))?;
+    draw_print_number(total_width, total_height, &mut buffer[..required_len], right_print, Point::new(right_print_x, print_y))?;
 
     let print_time = start_print.elapsed();
     let start_encode = Instant::now();
 
     // encode final drop image to webp
-    let result = encode_webp(&final_image);
+    let result = encode_webp(total_width, total_height, &buffer[..required_len]);
     let encode_time = start_encode.elapsed();
 
     tracing::debug!(
@@ -105,6 +119,8 @@ pub fn create_drop_image(
         print_time.as_secs_f64() * 1000.0,
         encode_time.as_secs_f64() * 1000.0
     );
+
+    DROP_POOL.lock().unwrap().push(buffer);
 
     result
 }
