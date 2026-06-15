@@ -1,0 +1,472 @@
+// due to extreme rng hit rates we'll rely on a read-only prewarmed memory atlas
+// pas startup kita warming memory sampe deket limit 2 gb terus freeze
+// di runtime klo hantam hit kita serve (dashmap/ahash combo) sangat cepet & lock-free
+// klo miss kita decode dr disk tapi ga usah masukin memory biar ram overhead minimal
+
+use std::{
+    fmt::{Debug, Formatter, Result as FmtResult},
+    fs,
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
+};
+
+use ahash::RandomState;
+use dashmap::DashMap;
+
+use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
+use webpx::{Decoder, DecoderConfig};
+
+use crate::renderer::{
+    error::RenderError,
+    pixels::{self, RawCardImage},
+};
+
+const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 GB limit in kilobyte
+
+#[derive(Default, Debug)]
+pub struct AtlasStats {
+    pub hits: AtomicU64,
+    pub misses: AtomicU64,
+}
+
+// hold cached image and list of file here
+pub struct CardAtlas {
+    memory: Arc<DashMap<Arc<str>, Arc<RawCardImage>, RandomState>>,
+    file_index: Arc<ahash::HashMap<Arc<str>, PathBuf>>,
+    pub stats: AtlasStats,
+}
+
+impl Debug for CardAtlas {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("CardAtlas")
+            .field("file_index_len", &self.file_index.len())
+            .field("stats", &self.stats)
+            .finish_non_exhaustive() // intentional for hashmap
+    }
+}
+
+impl CardAtlas {
+    // sets up the atlas and finds all webp card images
+    pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self, RenderError> {
+        let file_index = Self::build_card_list(cards_directory.as_ref());
+
+        if file_index.is_empty() {
+            return Err(RenderError::Internal(
+                "no cards found..? pls check or set path".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            memory: Arc::new(DashMap::with_hasher(RandomState::new())),
+            file_index: Arc::new(file_index),
+            stats: AtlasStats::default(),
+        })
+    }
+
+    // makes a list of all image files in the folder
+    // we check this list first so we dont waste time looking for missing files.
+    // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
+    fn build_card_list(cards_dir: &Path) -> ahash::HashMap<Arc<str>, PathBuf> {
+        fn find_card(base_dir: &Path, dir: &Path, index: &mut ahash::HashMap<Arc<str>, PathBuf>) {
+            let Ok(entries) = fs::read_dir(dir) else {
+                return;
+            };
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    find_card(base_dir, &path, index);
+                    continue;
+                }
+
+                let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+
+                if ext.eq_ignore_ascii_case("webp") {
+                    if let Ok(rel_path) = path.strip_prefix(base_dir) {
+                        let key_path = rel_path.with_extension("");
+                        let name_str = key_path.to_string_lossy().replace('\\', "/");
+                        index.insert(name_str.into(), path);
+                    }
+                } else if matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg") {
+                    tracing::warn!("ignored '{}' (only webp supported)", path.display());
+                }
+            }
+        }
+
+        let mut index = ahash::HashMap::default();
+        find_card(cards_dir, cards_dir, &mut index);
+        index
+    }
+
+    // bake the entire atlas up to the memory limit
+    pub fn start_prewarm(&self) {
+        if self.file_index.is_empty() {
+            return;
+        }
+
+        let file_index_clone = self.file_index.clone();
+        let memory = self.memory.clone();
+
+        spawn(async move {
+            tracing::info!("baking memory cache (dashmap/ahash)..");
+            let warmed = Arc::new(AtomicUsize::new(0));
+            let warmed_kb = Arc::new(AtomicU64::new(0));
+            let warmed_disk_bytes = Arc::new(AtomicU64::new(0));
+            let semaphore = Arc::new(Semaphore::new(8));
+
+            for (name, path) in file_index_clone.iter() {
+                // check if we reached 90% cap before spawning more work
+                let current_kb = warmed_kb.load(Ordering::Relaxed);
+                if current_kb > ((MAX_CACHE_SIZE_KB as u64) * 9 / 10) {
+                    tracing::info!("stopped baking (reached memory cap)");
+                    break;
+                }
+
+                let Ok(permit) = semaphore.clone().acquire_owned().await else {
+                    tracing::error!("failed baking (semaphore closed ?)");
+                    return;
+                };
+
+                let name = name.clone();
+                let path = path.clone();
+                let memory = memory.clone();
+                let warmed = warmed.clone();
+                let warmed_kb = warmed_kb.clone();
+                let warmed_disk_bytes = warmed_disk_bytes.clone();
+
+                spawn(async move {
+                    let Ok(file_bytes) = tokio_fs::read(&path).await else {
+                        return;
+                    };
+
+                    // check if its webp or not.
+                    if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
+                        tracing::warn!("skipped '{}' (only webp supported)", path.display());
+                        return;
+                    }
+
+                    let file_len = file_bytes.len() as u64;
+
+                    let result = task::spawn_blocking(move || {
+                        let decode_res = Decoder::new(&file_bytes)
+                            .and_then(|d| d.decode_rgba_raw());
+                        
+                        decode_res.ok().map(|(pixels, width, height)| {
+                            Arc::new(RawCardImage {
+                                size: pixels::Size::new(width, height),
+                                pixels: pixels.into_boxed_slice(),
+                            })
+                        })
+                    })
+                    .await
+                    .unwrap_or(None);
+
+                    if let Some(arc_img) = result {
+                        let size_kb = arc_img.pixels.len() / 1024;
+                        memory.insert(name, arc_img);
+                        warmed.fetch_add(1, Ordering::Relaxed);
+                        warmed_kb.fetch_add(size_kb as u64, Ordering::Relaxed);
+                        warmed_disk_bytes.fetch_add(file_len, Ordering::Relaxed);
+                    }
+
+                    drop(permit);
+                });
+            }
+
+            if semaphore.acquire_many(8).await.is_err() {
+                tracing::error!("failed baking (semaphore closed ?)");
+            }
+
+            let total_disk_bytes = warmed_disk_bytes.load(Ordering::Relaxed);
+            let mb = total_disk_bytes as f64 / 1_048_576.0;
+
+            tracing::info!(
+                "finished baking {} cards [{:.2} mb]",
+                warmed.load(Ordering::Relaxed),
+                mb
+            );
+        });
+    }
+
+    pub fn get_stats(&self) -> (u64, u64, f64) {
+        let hits = self.stats.hits.load(Ordering::Relaxed);
+        let misses = self.stats.misses.load(Ordering::Relaxed);
+        let total = hits + misses;
+        let hit_rate = if total == 0 { 0.0 } else { (hits as f64 / total as f64) * 100.0 };
+        (hits, misses, hit_rate)
+    }
+
+    // gets decoded card image from atlas memory map.
+    // miss baca dari disk langsung (juga ga dimasukin ke mem map, liat line 4)
+    pub async fn get_card(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
+        if let Some(img) = self.memory.get(name) {
+            self.stats.hits.fetch_add(1, Ordering::Relaxed);
+            tracing::trace!("atlas hit for {}", name);
+            return Ok(img.value().clone());
+        }
+
+        self.stats.misses.fetch_add(1, Ordering::Relaxed);
+        tracing::trace!("atlas miss for {}", name);
+
+        let path = self
+            .file_index
+            .get(name)
+            .cloned()
+            .ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
+
+        let file_bytes = tokio_fs::read(&path).await.map_err(|e| {
+            RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
+        })?;
+
+        if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
+            tracing::warn!("rejected '{}' (only webp supported)", path.display());
+            return Err(RenderError::Internal(format!("'{}' is not a webp", path.display())));
+        }
+
+        let arc_img = task::spawn_blocking(move || {
+            let (pixels, width, height) = Decoder::new(&file_bytes)
+                .map_err(|e| {
+                    RenderError::Internal(format!(
+                        "failed to init decoder for '{}': {e:?}",
+                        path.display()
+                    ))
+                })?
+                .decode_rgba_raw()
+                .map_err(|e| {
+                RenderError::Internal(format!(
+                    "failed to decode webp for '{}': {e:?}",
+                    path.display()
+                ))
+            })?;
+
+            let image = RawCardImage {
+                size: pixels::Size::new(width, height),
+                pixels: pixels.into_boxed_slice(),
+            };
+            Ok(Arc::new(image))
+        })
+        .await
+        .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))??;
+
+        Ok(arc_img)
+    }
+}
+    pub stats: CacheStats,
+}
+
+impl Debug for CardCache {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("CardCache")
+            .field("file_index_len", &self.file_index.len())
+            .field("stats", &self.stats)
+            .finish_non_exhaustive() // intentional for hashmap
+    }
+}
+
+impl CardCache {
+    // sets up the cache and finds all webp card images
+    pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self, RenderError> {
+        let file_index = Self::build_card_list(cards_directory.as_ref());
+
+        if file_index.is_empty() {
+            return Err(RenderError::Internal(
+                "no cards found..? pls check or set path".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            memory: Arc::new(RwLock::new(HashMap::new())),
+            file_index: Arc::new(file_index),
+            stats: CacheStats::default(),
+        })
+    }
+
+    // makes a list of all image files in the folder
+    // we check this list first so we dont waste time looking for missing files.
+    // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
+    fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, PathBuf> {
+        fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, PathBuf>) {
+            let Ok(entries) = fs::read_dir(dir) else {
+                return;
+            };
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    find_card(base_dir, &path, index);
+                    continue;
+                }
+
+                let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+
+                if ext.eq_ignore_ascii_case("webp") {
+                    if let Ok(rel_path) = path.strip_prefix(base_dir) {
+                        let key_path = rel_path.with_extension("");
+                        let name_str = key_path.to_string_lossy().replace('\\', "/");
+                        index.insert(name_str.into(), path);
+                    }
+                } else if matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg") {
+                    tracing::warn!("ignored '{}' (only webp supported)", path.display());
+                }
+            }
+        }
+
+        let mut index = HashMap::new();
+        find_card(cards_dir, cards_dir, &mut index);
+        index
+    }
+
+    // warm cache
+    pub fn start_prewarm(&self) {
+        if self.file_index.is_empty() {
+            return;
+        }
+
+        let file_index_clone = self.file_index.clone();
+        let memory = self.memory.clone();
+
+        spawn(async move {
+            tracing::info!("baking tinyufo cache..");
+            let warmed = Arc::new(AtomicUsize::new(0));
+            let warmed_kb = Arc::new(AtomicU64::new(0));
+            let warmed_disk_bytes = Arc::new(AtomicU64::new(0));
+            let semaphore = Arc::new(Semaphore::new(8));
+
+            for (name, path) in file_index_clone.iter() {
+                // check if we reached 90% cap before spawning more work
+                let current_kb = warmed_kb.load(Ordering::Relaxed);
+                if current_kb > ((MAX_CACHE_SIZE_KB as u64) * 9 / 10) {
+                    tracing::info!("stopped baking (reached memory cap)");
+                    break;
+                }
+
+                let Ok(permit) = semaphore.clone().acquire_owned().await else {
+                    tracing::error!("failed baking (semaphore closed ?)");
+                    return;
+                };
+
+                let name = name.clone();
+                let path = path.clone();
+                let memory = memory.clone();
+                let warmed = warmed.clone();
+                let warmed_kb = warmed_kb.clone();
+                let warmed_disk_bytes = warmed_disk_bytes.clone();
+
+                spawn(async move {
+                    let Ok(file_bytes) = tokio_fs::read(&path).await else {
+                        return;
+                    };
+
+                    // check if its webp or not.
+                    if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
+                        tracing::warn!("skipped '{}' (only webp supported)", path.display());
+                        return;
+                    }
+
+                    let file_len = file_bytes.len() as u64;
+
+                    let result = task::spawn_blocking(move || {
+                        decode_rgba(&file_bytes).ok().map(|(pixels, width, height)| {
+                            Arc::new(RawCardImage {
+                                size: pixels::Size::new(width, height),
+                                pixels: pixels.into_boxed_slice(),
+                            })
+                        })
+                    })
+                    .await
+                    .unwrap_or(None);
+
+                    if let Some(arc_img) = result {
+                        let size_kb = arc_img.pixels.len() / 1024;
+                        if let Ok(mut guard) = memory.write() {
+                            guard.insert(name, arc_img);
+                        }
+                        warmed.fetch_add(1, Ordering::Relaxed);
+                        warmed_kb.fetch_add(size_kb as u64, Ordering::Relaxed);
+                        warmed_disk_bytes.fetch_add(file_len, Ordering::Relaxed);
+                    }
+
+                    drop(permit);
+                });
+            }
+
+            if semaphore.acquire_many(8).await.is_err() {
+                tracing::error!("failed baking (semaphore closed ?)");
+            }
+
+            let total_disk_bytes = warmed_disk_bytes.load(Ordering::Relaxed);
+            let mb = total_disk_bytes as f64 / 1_048_576.0;
+
+            tracing::info!(
+                "finished baking {} cards [{:.2} mb]",
+                warmed.load(Ordering::Relaxed),
+                mb
+            );
+        });
+    }
+
+    pub fn get_stats(&self) -> (u64, u64, f64) {
+        let hits = self.stats.hits.load(Ordering::Relaxed);
+        let misses = self.stats.misses.load(Ordering::Relaxed);
+        let total = hits + misses;
+        let hit_rate = if total == 0 { 0.0 } else { (hits as f64 / total as f64) * 100.0 };
+        (hits, misses, hit_rate)
+    }
+
+    // gets decoded card image from cache.
+    // cache miss baca dari disk langsung (juga ga dimasukin ke cache, liat line 31)
+    pub async fn get_card(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
+        // cari di memory duluan pake read lock
+        if let Ok(guard) = self.memory.read()
+            && let Some(img) = guard.get(name)
+        {
+            self.stats.hits.fetch_add(1, Ordering::Relaxed);
+            tracing::trace!("cache hit for {}", name);
+            return Ok(img.clone());
+        }
+
+        self.stats.misses.fetch_add(1, Ordering::Relaxed);
+        tracing::trace!("cache miss for {}", name);
+
+        let path = self
+            .file_index
+            .get(name)
+            .cloned()
+            .ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
+
+        let file_bytes = tokio_fs::read(&path).await.map_err(|e| {
+            RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
+        })?;
+
+        if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
+            tracing::warn!("rejected '{}' (only webp supported)", path.display());
+            return Err(RenderError::Internal(format!("'{}' is not a webp", path.display())));
+        }
+
+        let arc_img = task::spawn_blocking(move || {
+            let (pixels, width, height) = decode_rgba(&file_bytes).map_err(|e| {
+                RenderError::Internal(format!(
+                    "failed to decode webp for '{}': {e:?}",
+                    path.display()
+                ))
+            })?;
+
+            let image = RawCardImage {
+                size: pixels::Size::new(width, height),
+                pixels: pixels.into_boxed_slice(),
+            };
+            Ok(Arc::new(image))
+        })
+        .await
+        .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))??;
+
+        Ok(arc_img)
+    }
+}
