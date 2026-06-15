@@ -255,3 +255,4 @@ impl CardAtlas {
 
         Ok(arc_img)
     }
+}
