@@ -15,8 +15,9 @@ use std::{
 
 use ahash::RandomState;
 use dashmap::DashMap;
+
 use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
-use webpx::Decoder;
+use webpx::{Decoder, DecoderConfig};
 
 use crate::renderer::{
     error::RenderError,
@@ -34,7 +35,7 @@ pub struct AtlasStats {
 // hold cached image and list of file here
 pub struct CardAtlas {
     memory: Arc<DashMap<Arc<str>, Arc<RawCardImage>, RandomState>>,
-    file_index: Arc<ahash::HashMap<Arc<str>, PathBuf>>,
+    file_index: Arc<ahash::HashMap<Arc<str>, Box<Path>>>,
     pub stats: AtlasStats,
 }
 
@@ -68,8 +69,8 @@ impl CardAtlas {
     // makes a list of all image files in the folder
     // we check this list first so we dont waste time looking for missing files.
     // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
-    fn build_card_list(cards_dir: &Path) -> ahash::HashMap<Arc<str>, PathBuf> {
-        fn find_card(base_dir: &Path, dir: &Path, index: &mut ahash::HashMap<Arc<str>, PathBuf>) {
+    fn build_card_list(cards_dir: &Path) -> ahash::HashMap<Arc<str>, Box<Path>> {
+        fn find_card(base_dir: &Path, dir: &Path, index: &mut ahash::HashMap<Arc<str>, Box<Path>>) {
             let Ok(entries) = fs::read_dir(dir) else {
                 return;
             };
@@ -89,7 +90,7 @@ impl CardAtlas {
                     if let Ok(rel_path) = path.strip_prefix(base_dir) {
                         let key_path = rel_path.with_extension("");
                         let name_str = key_path.to_string_lossy().replace('\\', "/");
-                        index.insert(name_str.into(), path);
+                        index.insert(name_str.into(), path.into_boxed_path());
                     }
                 } else if matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg") {
                     tracing::warn!("ignored '{}' (only webp supported)", path.display());
@@ -152,9 +153,9 @@ impl CardAtlas {
                     let file_len = file_bytes.len() as u64;
 
                     let result = task::spawn_blocking(move || {
-                        let decode_res =
-                            Decoder::new(&file_bytes).and_then(webpx::Decoder::decode_rgba_raw);
-
+                        let decode_res = Decoder::new(&file_bytes)
+                            .and_then(|d| d.decode_rgba_raw());
+                        
                         decode_res.ok().map(|(pixels, width, height)| {
                             Arc::new(RawCardImage {
                                 size: pixels::Size::new(width, height),
@@ -237,11 +238,11 @@ impl CardAtlas {
                 })?
                 .decode_rgba_raw()
                 .map_err(|e| {
-                    RenderError::Internal(format!(
-                        "failed to decode webp for '{}': {e:?}",
-                        path.display()
-                    ))
-                })?;
+                RenderError::Internal(format!(
+                    "failed to decode webp for '{}': {e:?}",
+                    path.display()
+                ))
+            })?;
 
             let image = RawCardImage {
                 size: pixels::Size::new(width, height),
