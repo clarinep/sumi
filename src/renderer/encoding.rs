@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use webpx::{AlphaFilter, EncoderConfig, Preset, Unstoppable};
 
-use crate::renderer::{error::RenderError, pixels::RawCardImage};
+use crate::renderer::error::RenderError;
 
 const WEBP_QUALITY: f32 = 85.0;
 const WEBP_SPEED: u8 = 0;
@@ -19,10 +19,7 @@ const WEBP_SEGMENTS: u8 = 1;
 /// the point of skipping alpha compression in webpx is also pointless - similar reason
 /// using lossless is also not worth, although encoding takes 100ms instead of our current 350ms
 /// it is uncompressed and our drop image dimension is huge so again file size would be 2 MB - bad.
-pub fn encode_webp(image: &RawCardImage) -> Result<Bytes, RenderError> {
-    let width = image.size.width;
-    let height = image.size.height;
-    let pixel_data = &image.pixels;
+pub fn encode_webp(width: u32, height: u32, pixel_data: &[u8]) -> Result<Bytes, RenderError> {
 
     // we keep encoding on one thread so we avoid slowing down the server.
     // this is by far the only overhead we have, it'll take ~100ms per img.
