@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let state = Arc::new(renderer);
 
     // prewarm cache di belakang
-    state.card_cache.start_prewarm();
+    state.card_atlas.start_prewarm();
 
     let app = Router::new()
         .route("/health", get(|| async { "OK" }))
