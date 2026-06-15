@@ -707,6 +707,7 @@ dependencies = [
  "bytes",
  "dashmap",
  "fontdue",
+ "itoa",
  "mimalloc",
  "serde",
  "serde_json",

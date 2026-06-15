@@ -1,5 +1,4 @@
-use std::sync::Mutex;
-use std::time::Instant;
+use std::{sync::Mutex, time::Instant};
 
 use bytes::Bytes;
 
@@ -53,7 +52,7 @@ pub fn create_drop_image(
     // make sure buffer big enough for image (width * height * 4 bytes per pixel).
     let required_len = (total_width * total_height * 4) as usize;
 
-    let mut buffer = DROP_POOL.lock().unwrap().pop().unwrap_or_else(Vec::new);
+    let mut buffer = DROP_POOL.lock().unwrap().pop().unwrap_or_default();
     if buffer.len() < required_len {
         buffer.resize(required_len, 0);
     } else {
@@ -72,7 +71,7 @@ pub fn create_drop_image(
 
     let mut left_itoa = itoa::Buffer::new();
     let left_print_str = left_itoa.format(left_card_print);
-    
+
     let mut left_print_buf = [0u8; 32];
     left_print_buf[0] = b'#';
     let left_print_len = 1 + left_print_str.len();
@@ -81,7 +80,7 @@ pub fn create_drop_image(
 
     let mut right_itoa = itoa::Buffer::new();
     let right_print_str = right_itoa.format(right_card_print);
-    
+
     let mut right_print_buf = [0u8; 32];
     right_print_buf[0] = b'#';
     let right_print_len = 1 + right_print_str.len();
@@ -103,8 +102,20 @@ pub fn create_drop_image(
         (right_card_x + right_width).cast_signed() - right_padding - right_print_width;
     let print_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_print_number(total_width, total_height, &mut buffer[..required_len], left_print, Point::new(left_print_x, print_y))?;
-    draw_print_number(total_width, total_height, &mut buffer[..required_len], right_print, Point::new(right_print_x, print_y))?;
+    draw_print_number(
+        total_width,
+        total_height,
+        &mut buffer[..required_len],
+        left_print,
+        Point::new(left_print_x, print_y),
+    )?;
+    draw_print_number(
+        total_width,
+        total_height,
+        &mut buffer[..required_len],
+        right_print,
+        Point::new(right_print_x, print_y),
+    )?;
 
     let print_time = start_print.elapsed();
     let start_encode = Instant::now();
