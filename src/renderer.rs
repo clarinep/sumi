@@ -1,6 +1,6 @@
 pub mod atlas;
 pub mod canvas;
-pub mod encoding;
+pub mod encoder;
 pub mod error;
 pub mod pixels;
 pub mod print;
