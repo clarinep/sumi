@@ -3,7 +3,7 @@ use std::{sync::Mutex, time::Instant};
 use bytes::Bytes;
 
 use super::{
-    encoding::encode_webp,
+    encoder::encode_webp,
     error::RenderError,
     pixels::{Point, RawCardImage},
     print::{draw_print_number, measure_print_number},
