@@ -2,8 +2,7 @@ use std::sync::LazyLock;
 
 use fontdue::{Font, FontSettings};
 
-use super::error::RenderError;
-use super::pixels::{Point, RawCardImage};
+use super::{error::RenderError, pixels::Point};
 
 const TEXT_SIZE: f32 = 60.0;
 
@@ -26,9 +25,7 @@ static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
     let font =
         Font::from_bytes(font_data, FontSettings::default()).expect("could not load font file");
     // Safe to unwrap because font data is statically embedded and won't change during runtime
-    let metrics = font
-        .horizontal_line_metrics(TEXT_SIZE)
-        .expect("font should have line metrics");
+    let metrics = font.horizontal_line_metrics(TEXT_SIZE).expect("font should have line metrics");
     let ascent = metrics.ascent;
 
     let render_char = |c: char| -> Letter {
@@ -93,35 +90,44 @@ pub fn draw_print_number(
                 continue;
             }
 
-            let canvas_row_idx = usize::try_from(canvas_y)
-                .map_err(|e| RenderError::Internal(format!("Failed to convert canvas row index: {e}")))?;
-            let canvas_w = usize::try_from(canvas_width)
-                .map_err(|e| RenderError::Internal(format!("Failed to convert canvas width: {e}")))?;
-            let canvas_col_idx = usize::try_from(pos.x + letter.offset_x + draw_x_start)
-                .map_err(|e| RenderError::Internal(format!("Failed to convert canvas column index: {e}")))?;
+            let canvas_row_idx = usize::try_from(canvas_y).map_err(|e| {
+                RenderError::Internal(format!("Failed to convert canvas row index: {e}"))
+            })?;
+            let canvas_w = usize::try_from(canvas_width).map_err(|e| {
+                RenderError::Internal(format!("Failed to convert canvas width: {e}"))
+            })?;
+            let canvas_col_idx =
+                usize::try_from(pos.x + letter.offset_x + draw_x_start).map_err(|e| {
+                    RenderError::Internal(format!("Failed to convert canvas column index: {e}"))
+                })?;
             let canvas_pixel_start = (canvas_row_idx * canvas_w + canvas_col_idx) * 4;
 
-            let letter_row_idx = usize::try_from(draw_y_offset)
-                .map_err(|e| RenderError::Internal(format!("Failed to convert letter row index: {e}")))?;
-            let letter_w = usize::try_from(letter_width)
-                .map_err(|e| RenderError::Internal(format!("Failed to convert letter width: {e}")))?;
-            let letter_col_idx = usize::try_from(draw_x_start)
-                .map_err(|e| RenderError::Internal(format!("Failed to convert letter column index: {e}")))?;
+            let letter_row_idx = usize::try_from(draw_y_offset).map_err(|e| {
+                RenderError::Internal(format!("Failed to convert letter row index: {e}"))
+            })?;
+            let letter_w = usize::try_from(letter_width).map_err(|e| {
+                RenderError::Internal(format!("Failed to convert letter width: {e}"))
+            })?;
+            let letter_col_idx = usize::try_from(draw_x_start).map_err(|e| {
+                RenderError::Internal(format!("Failed to convert letter column index: {e}"))
+            })?;
             let letter_pixel_start = letter_row_idx * letter_w + letter_col_idx;
 
-            let count = usize::try_from(draw_x_end - draw_x_start)
-                .map_err(|e| RenderError::Internal(format!("Failed to convert pixel transfer count: {e}")))?;
+            let count = usize::try_from(draw_x_end - draw_x_start).map_err(|e| {
+                RenderError::Internal(format!("Failed to convert pixel transfer count: {e}"))
+            })?;
 
             let canvas_pixel_end = canvas_pixel_start + count * 4;
             let letter_pixel_end = letter_pixel_start + count;
 
-            let target_pixels = canvas_buf
-                .get_mut(canvas_pixel_start..canvas_pixel_end)
-                .ok_or_else(|| RenderError::Internal("Canvas pixel range out of bounds".to_string()))?;
-            let letter_row = letter
-                .coverage
-                .get(letter_pixel_start..letter_pixel_end)
-                .ok_or_else(|| RenderError::Internal("Letter coverage range out of bounds".to_string()))?;
+            let target_pixels =
+                canvas_buf.get_mut(canvas_pixel_start..canvas_pixel_end).ok_or_else(|| {
+                    RenderError::Internal("Canvas pixel range out of bounds".to_string())
+                })?;
+            let letter_row =
+                letter.coverage.get(letter_pixel_start..letter_pixel_end).ok_or_else(|| {
+                    RenderError::Internal("Letter coverage range out of bounds".to_string())
+                })?;
 
             for (pixel, &coverage) in target_pixels.chunks_exact_mut(4).zip(letter_row) {
                 if coverage == 255 {
@@ -167,4 +173,3 @@ pub fn measure_print_number(print_number: &[u8]) -> i32 {
     }
     width
 }
- 

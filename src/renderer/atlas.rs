@@ -6,7 +6,7 @@
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
         Arc,
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -15,9 +15,8 @@ use std::{
 
 use ahash::RandomState;
 use dashmap::DashMap;
-
 use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
-use webpx::{Decoder, DecoderConfig};
+use webpx::Decoder;
 
 use crate::renderer::{
     error::RenderError,
@@ -117,7 +116,7 @@ impl CardAtlas {
             let warmed = Arc::new(AtomicUsize::new(0));
             let warmed_kb = Arc::new(AtomicU64::new(0));
             let warmed_disk_bytes = Arc::new(AtomicU64::new(0));
-            let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(8);
+            let cores = std::thread::available_parallelism().map_or(8, std::num::NonZero::get);
             let concurrent_tasks = cores * 2;
             let semaphore = Arc::new(Semaphore::new(concurrent_tasks));
 
@@ -155,9 +154,9 @@ impl CardAtlas {
                     let file_len = file_bytes.len() as u64;
 
                     let result = task::spawn_blocking(move || {
-                        let decode_res = Decoder::new(&file_bytes)
-                            .and_then(|d| d.decode_rgba_raw());
-                        
+                        let decode_res =
+                            Decoder::new(&file_bytes).and_then(webpx::Decoder::decode_rgba_raw);
+
                         decode_res.ok().map(|(pixels, width, height)| {
                             Arc::new(RawCardImage {
                                 size: pixels::Size::new(width, height),
@@ -240,11 +239,11 @@ impl CardAtlas {
                 })?
                 .decode_rgba_raw()
                 .map_err(|e| {
-                RenderError::Internal(format!(
-                    "failed to decode webp for '{}': {e:?}",
-                    path.display()
-                ))
-            })?;
+                    RenderError::Internal(format!(
+                        "failed to decode webp for '{}': {e:?}",
+                        path.display()
+                    ))
+                })?;
 
             let image = RawCardImage {
                 size: pixels::Size::new(width, height),
