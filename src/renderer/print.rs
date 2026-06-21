@@ -24,7 +24,7 @@ static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
     let font_data = include_bytes!("../../assets/LexendDeca-Bold.ttf") as &[u8];
     let font =
         Font::from_bytes(font_data, FontSettings::default()).expect("could not load font file");
-    // Safe to unwrap because font data is statically embedded and won't change during runtime
+    // safe to unwrap because font is built in and won't change during runtime
     let metrics = font.horizontal_line_metrics(TEXT_SIZE).expect("font should have line metrics");
     let ascent = metrics.ascent;
 
@@ -91,30 +91,30 @@ pub fn draw_print_number(
             }
 
             let canvas_row_idx = usize::try_from(canvas_y).map_err(|e| {
-                RenderError::Internal(format!("Failed to convert canvas row index: {e}"))
+                RenderError::Internal(format!("failed to convert canvas row index: {e}"))
             })?;
             let canvas_w = usize::try_from(canvas_width).map_err(|e| {
-                RenderError::Internal(format!("Failed to convert canvas width: {e}"))
+                RenderError::Internal(format!("failed to convert canvas width: {e}"))
             })?;
             let canvas_col_idx =
                 usize::try_from(pos.x + letter.offset_x + draw_x_start).map_err(|e| {
-                    RenderError::Internal(format!("Failed to convert canvas column index: {e}"))
+                    RenderError::Internal(format!("failed to convert canvas column index: {e}"))
                 })?;
             let canvas_pixel_start = (canvas_row_idx * canvas_w + canvas_col_idx) * 4;
 
             let letter_row_idx = usize::try_from(draw_y_offset).map_err(|e| {
-                RenderError::Internal(format!("Failed to convert letter row index: {e}"))
+                RenderError::Internal(format!("failed to convert letter row index: {e}"))
             })?;
             let letter_w = usize::try_from(letter_width).map_err(|e| {
-                RenderError::Internal(format!("Failed to convert letter width: {e}"))
+                RenderError::Internal(format!("failed to convert letter width: {e}"))
             })?;
             let letter_col_idx = usize::try_from(draw_x_start).map_err(|e| {
-                RenderError::Internal(format!("Failed to convert letter column index: {e}"))
+                RenderError::Internal(format!("failed to convert letter column index: {e}"))
             })?;
             let letter_pixel_start = letter_row_idx * letter_w + letter_col_idx;
 
             let count = usize::try_from(draw_x_end - draw_x_start).map_err(|e| {
-                RenderError::Internal(format!("Failed to convert pixel transfer count: {e}"))
+                RenderError::Internal(format!("failed to convert pixel transfer count: {e}"))
             })?;
 
             let canvas_pixel_end = canvas_pixel_start + count * 4;
@@ -122,11 +122,11 @@ pub fn draw_print_number(
 
             let target_pixels =
                 canvas_buf.get_mut(canvas_pixel_start..canvas_pixel_end).ok_or_else(|| {
-                    RenderError::Internal("Canvas pixel range out of bounds".to_string())
+                    RenderError::Internal("canvas pixel range out of bounds".to_string())
                 })?;
             let letter_row =
                 letter.coverage.get(letter_pixel_start..letter_pixel_end).ok_or_else(|| {
-                    RenderError::Internal("Letter coverage range out of bounds".to_string())
+                    RenderError::Internal("letter coverage range out of bounds".to_string())
                 })?;
 
             for (pixel, &coverage) in target_pixels.chunks_exact_mut(4).zip(letter_row) {
@@ -161,6 +161,7 @@ pub fn draw_print_number(
     Ok(())
 }
 
+// measures how many padding needed for our print numbers
 pub fn measure_print_number(print_number: &[u8]) -> i32 {
     let mut width = 0;
     for &b in print_number {
