@@ -1,7 +1,7 @@
-// due to extreme rng hit rates we'll rely on a read-only prewarmed memory atlas
+// due to static rng cache hit rates we will use simple read only cache system
 // pas startup kita warming memory sampe deket limit 2 gb terus freeze
-// di runtime klo hantam hit kita serve (dashmap/ahash combo) sangat cepet & lock-free
-// klo miss kita decode dr disk tapi ga usah masukin memory biar ram overhead minimal
+// di runtime klo hantam hit kita serve pakai dashmap sama ahash dibanding siphash lebih cepet.
+// klo miss kita decode dr disk tapi ga usah masukin memory biar cpu dan ram minimal
 
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -23,32 +23,32 @@ use crate::renderer::{
     pixels::{self, RawCardImage},
 };
 
-const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 GB limit in kilobyte
+const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 gb limit in kilobyte
 
 #[derive(Default, Debug)]
-pub struct AtlasStats {
+pub struct CacheStats {
     pub hits: AtomicU64,
     pub misses: AtomicU64,
 }
 
 // hold cached image and list of file here
-pub struct CardAtlas {
+pub struct CardCache {
     memory: Arc<DashMap<Arc<str>, Arc<RawCardImage>, RandomState>>,
     file_index: Arc<ahash::HashMap<Arc<str>, Box<Path>>>,
-    pub stats: AtlasStats,
+    pub stats: CacheStats,
 }
 
-impl Debug for CardAtlas {
+impl Debug for CardCache {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_struct("CardAtlas")
+        f.debug_struct("CardCache")
             .field("file_index_len", &self.file_index.len())
             .field("stats", &self.stats)
             .finish_non_exhaustive() // intentional for hashmap
     }
 }
 
-impl CardAtlas {
-    // sets up the atlas and finds all webp card images
+impl CardCache {
+    // sets up the cache and finds all webp card images
     pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self, RenderError> {
         let file_index = Self::build_card_list(cards_directory.as_ref());
 
@@ -61,7 +61,7 @@ impl CardAtlas {
         Ok(Self {
             memory: Arc::new(DashMap::with_hasher(RandomState::new())),
             file_index: Arc::new(file_index),
-            stats: AtlasStats::default(),
+            stats: CacheStats::default(),
         })
     }
 
@@ -102,7 +102,7 @@ impl CardAtlas {
         index
     }
 
-    // bake the entire atlas up to the memory limit
+    // bake the entire cache up to the memory limit
     pub fn start_prewarm(&self) {
         if self.file_index.is_empty() {
             return;
@@ -202,17 +202,17 @@ impl CardAtlas {
         (hits, misses, hit_rate)
     }
 
-    // gets decoded card image from atlas memory map.
+    // gets decoded card image from cache memory map.
     // miss baca dari disk langsung (juga ga dimasukin ke mem map, liat line 4)
     pub async fn get_card(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
         if let Some(img) = self.memory.get(name) {
             self.stats.hits.fetch_add(1, Ordering::Relaxed);
-            tracing::trace!("atlas hit for {}", name);
+            tracing::trace!("cache hit for {}", name);
             return Ok(img.value().clone());
         }
 
         self.stats.misses.fetch_add(1, Ordering::Relaxed);
-        tracing::trace!("atlas miss for {}", name);
+        tracing::trace!("cache miss for {}", name);
 
         let path = self
             .file_index
@@ -233,7 +233,7 @@ impl CardAtlas {
             let (pixels, width, height) = Decoder::new(&file_bytes)
                 .map_err(|e| {
                     RenderError::Internal(format!(
-                        "failed to init decoder for '{}': {e:?}",
+                        "failed to start decoder for '{}': {e:?}",
                         path.display()
                     ))
                 })?
