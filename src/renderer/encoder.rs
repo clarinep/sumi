@@ -9,7 +9,7 @@ const WEBP_ALPHA_QUALITY: u8 = 80;
 const WEBP_THREAD_LEVEL: u8 = 0;
 const WEBP_SEGMENTS: u8 = 1;
 
-/// we take raw pixels of two diff cards from atlas (memory)
+/// we take raw pixels of two diff cards from cache
 /// paste it into canvas and draw print nums
 /// but because of that huge amount of alpha pixels and bigger image dimension
 /// now if we send that pixels data over to discord, lets just say the file size would be 2 MB
@@ -32,11 +32,11 @@ pub fn encode_webp(width: u32, height: u32, pixel_data: &[u8]) -> Result<Bytes, 
         .thread_level(WEBP_THREAD_LEVEL)
         .alpha_compression(true)
         .alpha_quality(WEBP_ALPHA_QUALITY)
-        .alpha_filter(AlphaFilter::None) // none filter maximizes alpha encoding throughput
+        .alpha_filter(AlphaFilter::None) // none filter maximizes alpha encoding
         .low_memory(false)
         .pass(1)
         .exact(false)
-        .partitions(3) // 3 = 8 partitions, unlocks parallel decoding for clients and parallelizes entropy stage
+        .partitions(3) // 3 = 8 partitions
         .segments(WEBP_SEGMENTS);
 
     let webp_data: Vec<u8> = settings
