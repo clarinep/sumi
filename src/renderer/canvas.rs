@@ -49,14 +49,14 @@ pub fn create_drop_image(
     let max_card_height = left_card.size.height.max(right_card.size.height);
     let total_height = max_card_height + PADDING_BETWEEN_CARDS * 2;
 
-    // make sure buffer big enough for image (width * height * 4 bytes per pixel).
+    // make sure buffer big enough for image (width * height * 4 bytes per pixel)
     let required_len = (total_width * total_height * 4) as usize;
 
     let mut buffer = DROP_POOL.lock().unwrap().pop().unwrap_or_default();
     if buffer.len() < required_len {
         buffer.resize(required_len, 0);
     } else {
-        // zero out only what we use to ensure transparency between cards is clean
+        // zero out only what we use
         buffer[..required_len].fill(0);
     }
 
