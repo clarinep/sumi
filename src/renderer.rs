@@ -1,4 +1,4 @@
-pub mod atlas;
+pub mod cache;
 pub mod canvas;
 pub mod encoder;
 pub mod error;
@@ -16,7 +16,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use atlas::CardAtlas;
+use cache::CardCache;
 use bytes::Bytes;
 use canvas::create_drop_image;
 use error::RenderError;
@@ -45,7 +45,7 @@ impl RequestStats {
 
 #[derive(Debug)]
 pub struct CardRenderer {
-    pub card_atlas: CardAtlas,
+    pub card_cache: CardCache,
     pub stats: RequestStats,
     pub start_time: Instant,
     cpu_semaphore: Arc<Semaphore>,
@@ -59,7 +59,7 @@ impl CardRenderer {
         init_font();
 
         Ok(Self {
-            card_atlas: CardAtlas::new(cards_directory.into())?,
+            card_cache: CardCache::new(cards_directory.into())?,
             stats: RequestStats::default(),
             start_time: Instant::now(),
             cpu_semaphore: Arc::new(Semaphore::new(cores)),
@@ -91,8 +91,8 @@ impl CardRenderer {
         let render_future = async {
             let start_fetch = Instant::now();
             let (left_card, right_card) = try_join!(
-                self.card_atlas.get_card(left_card_name),
-                self.card_atlas.get_card(right_card_name)
+                self.card_cache.get_card(left_card_name),
+                self.card_cache.get_card(right_card_name)
             )?;
             let fetch_elapsed = start_fetch.elapsed();
             tracing::debug!("fetching cards took {:.3}ms", fetch_elapsed.as_secs_f64() * 1000.0);
