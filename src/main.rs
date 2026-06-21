@@ -57,8 +57,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let welcomer = include_str!("ascii.txt");
     println!();
-    for line in welcomer.lines() {
-        println!("\x1b[38;2;241;138;131m{line}\x1b[0m");
+
+    use std::fmt::Write;
+    let lines: Vec<&str> = welcomer.lines().collect();
+    let num_lines = lines.len().max(1) as f32;
+
+    let (r1, g1, b1) = (241.0, 138.0, 131.0);
+    let (r2, g2, b2) = (255.0, 192.0, 145.0);
+
+    for (y, line) in lines.into_iter().enumerate() {
+        let mut styled_line = String::with_capacity(line.len() * 20);
+        let num_chars = line.chars().count().max(1) as f32;
+
+        for (x, ch) in line.chars().enumerate() {
+            // diagonal
+            let progress_x = x as f32 / num_chars;
+            let progress_y = y as f32 / num_lines;
+            let t = ((progress_x + progress_y) / 2.0).clamp(0.0, 1.0);
+
+            let r = (r1 + (r2 - r1) * t) as u8;
+            let g = (g1 + (g2 - g1) * t) as u8;
+            let b = (b1 + (b2 - b1) * t) as u8;
+
+            let _ = write!(styled_line, "\x1b[38;2;{r};{g};{b}m{ch}");
+        }
+        println!("{styled_line}\x1b[0m");
     }
 
     let cfg = Config::load();
