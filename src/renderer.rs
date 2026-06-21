@@ -16,8 +16,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cache::CardCache;
 use bytes::Bytes;
+use cache::CardCache;
 use canvas::create_drop_image;
 use error::RenderError;
 use print::init_font;
