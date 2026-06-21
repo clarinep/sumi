@@ -99,7 +99,7 @@ pub async fn handle_render_drop(
 
 // an endpoint for sumi stats and whether sumi died or not
 pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
-    let (atlas_hits, atlas_misses, atlas_hit_rate) = renderer.card_atlas.get_stats();
+    let (cache_hits, cache_misses, cache_hit_rate) = renderer.card_cache.get_stats();
 
     let total = renderer.stats.total_requests.load(Ordering::Relaxed);
     let errors = renderer.stats.failed_requests.load(Ordering::Relaxed);
@@ -111,7 +111,7 @@ pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl I
     // some of the metrics will be removed in next updates as we dont use these anymore except uptime
     let json_resp = Json(json!({
         "service": { "name": "sumi", "version": "1.2.0", "uptime_seconds": uptime },
-        "atlas": { "hits": atlas_hits, "misses": atlas_misses, "hit_rate_percent": atlas_hit_rate },
+        "cache": { "hits": cache_hits, "misses": cache_misses, "hit_rate_percent": cache_hit_rate },
         "requests": { "total": total, "errors": errors, "error_rate_percent": error_rate }
     }));
 
