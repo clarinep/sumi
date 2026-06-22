@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 styled_line.push(' ');
                 continue;
             }
-            
+
             let progress_x = x as f32 / num_chars;
             let progress_y = y as f32 / num_lines;
             let t = (progress_x * 0.8 + progress_y * 0.2).clamp(0.0, 1.0);
