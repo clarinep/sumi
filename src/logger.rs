@@ -9,31 +9,19 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
-#[derive(Debug, Clone, Copy)]
-struct Color {
-    r: u8,
-    g: u8,
-    b: u8,
+macro_rules! rgb {
+    ($r:literal, $g:literal, $b:literal) => {
+        concat!("\x1b[38;2;", $r, ";", $g, ";", $b, "m")
+    };
 }
 
-impl Color {
-    const fn new(r: u8, g: u8, b: u8) -> Self {
-        Self { r, g, b }
-    }
-}
-
-impl fmt::Display for Color {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\x1b[38;2;{};{};{}m", self.r, self.g, self.b)
-    }
-}
-
-const COLOR_TRACE: Color = Color::new(205, 180, 219);
-const COLOR_DEBUG: Color = Color::new(189, 224, 254);
-const COLOR_INFO: Color = Color::new(241, 138, 131);
-const COLOR_WARN: Color = Color::new(255, 180, 162);
-const COLOR_FAIL: Color = Color::new(239, 35, 60);
-const COLOR_TEXT: Color = Color::new(226, 226, 226);
+const COLOR_TRACE: &str = rgb!(205, 180, 219);
+const COLOR_DEBUG: &str = rgb!(189, 224, 254);
+const COLOR_INFO: &str = rgb!(241, 138, 131);
+const COLOR_WARN: &str = rgb!(255, 180, 162);
+const COLOR_FAIL: &str = rgb!(239, 35, 60);
+const COLOR_TEXT: &str = rgb!(226, 226, 226);
+const RESET: &str = "\x1b[0m";
 
 pub struct LogFormatter;
 
@@ -48,10 +36,9 @@ where
         mut writer: format::Writer<'_>,
         event: &Event<'_>,
     ) -> fmt::Result {
-        let metadata = event.metadata();
-        let level = metadata.level();
+        let level = *event.metadata().level();
 
-        let (color, label) = match *level {
+        let (color, label) = match level {
             Level::TRACE => (COLOR_TRACE, "trace"),
             Level::DEBUG => (COLOR_DEBUG, "debug"),
             Level::INFO => (COLOR_INFO, "info "),
@@ -59,12 +46,9 @@ where
             Level::ERROR => (COLOR_FAIL, "fail "),
         };
 
-        let reset = "\x1b[0m";
-
-        write!(writer, "{color}{label}{reset} ")?;
-        write!(writer, "{COLOR_TEXT}")?;
+        write!(writer, "{color}{label}{RESET} {COLOR_TEXT}")?;
         context.field_format().format_fields(writer.by_ref(), event)?;
-        write!(writer, "{reset}")?;
+        write!(writer, "{RESET}")?;
 
         writeln!(writer)
     }
