@@ -63,7 +63,6 @@ pub async fn handle_render_drop(
             // some things can happen but in theory sumi probably reached max timeout limit
             // on blair-go side we simply hardcode that sumi is busy for any error.
             // players can just retry the drop command again as it wont use up their drop cd.
-            let _elapsed = start.elapsed();
             renderer.stats.record(true);
 
             let (status, error_msg) = match error {
