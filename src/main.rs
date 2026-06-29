@@ -46,6 +46,7 @@ fn aegis() {
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     aegis();
@@ -61,8 +62,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let lines: Vec<&str> = welcomer.lines().collect();
     let num_lines = lines.len().max(1) as f32;
 
-    let (r1, g1, b1) = (212.0, 94.0, 168.0);
-    let (r2, g2, b2) = (255.0, 192.0, 120.0);
+    // Sumi color palette: mint green transitioning into bright peach-orange
+    let (r1, g1, b1) = (168.0_f32, 230.0_f32, 207.0_f32);
+    let (r2, g2, b2) = (255.0_f32, 192.0_f32, 120.0_f32);
 
     for (y, line) in lines.into_iter().enumerate() {
         let mut styled_line = String::with_capacity(line.len() * 20);
@@ -73,14 +75,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 styled_line.push(' ');
                 continue;
             }
-
+            
+            // Smoother horizontal-heavy gradient
             let progress_x = x as f32 / num_chars;
             let progress_y = y as f32 / num_lines;
             let t = (progress_x * 0.8 + progress_y * 0.2).clamp(0.0, 1.0);
 
-            let r = (r1 + (r2 - r1) * t) as u8;
-            let g = (g1 + (g2 - g1) * t) as u8;
-            let b = (b1 + (b2 - b1) * t) as u8;
+            // Simple linear interpolation
+            let r = (r2 - r1).mul_add(t, r1) as u8;
+            let g = (g2 - g1).mul_add(t, g1) as u8;
+            let b = (b2 - b1).mul_add(t, b1) as u8;
 
             let _ = write!(styled_line, "\x1b[38;2;{r};{g};{b}m{ch}");
         }
