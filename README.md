@@ -60,59 +60,54 @@ config:
     background: "transparent"
     clusterBkg: "transparent"
     clusterBorder: "transparent"
-    primaryColor: "#1E1E1E"
-    primaryTextColor: "#FFFFFF"
-    lineColor: "#FFFFFF"
-    tertiaryTextColor: "#FFFFFF"
+    lineColor: "#cdb4db"
+    primaryTextColor: "#e2e2e2"
     edgeLabelBackground: "transparent"
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
   padding: 30
+  flowchart:
+    curve: basis
 ---
-graph TD
-    DiscordAPI[Discord API]
-    BlairGo[blair-go]
-    Sumi[Axum]
-    CardCache{Dashmap}
-    CardAssets[(Cards - Disk)]
-    WebpxDecode[webpx<br/>decode to rgba]
-    CanvasComposite[canvas.rs<br/>makes canvas]
-    Fontdue[fontdue<br/>render print numbers]
-    WebpxEncode[webpx<br/>encode to webp]
-    BytesOutput[bytes::Bytes]
+flowchart TD
+    discord["&nbsp;&nbsp;discord api&nbsp;&nbsp;"]
+    blair["&nbsp;&nbsp;blair-go&nbsp;&nbsp;"]
 
-    DiscordAPI -->|Request| BlairGo
-    BlairGo -->|http /render/drop/| Sumi
-
-    subgraph SumiRenderer[" "]
-        Sumi --> CardCache
-        CardCache -->|Cache Miss| CardAssets
-        CardAssets --> WebpxDecode
-        WebpxDecode --> CardCache
-        CardCache -->|Cache Hit| CanvasComposite
-        CanvasComposite --> Fontdue
-        Fontdue --> WebpxEncode
-        WebpxEncode --> BytesOutput
+    subgraph sumi[" "]
+        direction TB
+        server["&nbsp;&nbsp;axum server&nbsp;&nbsp;"]
+        cache["&nbsp;&nbsp;dashmap&nbsp;&nbsp;"]
+        disk["&nbsp;&nbsp;cards disk&nbsp;&nbsp;"]
+        decode["&nbsp;&nbsp;webpx: decode rgba&nbsp;&nbsp;"]
+        canvas["&nbsp;&nbsp;canvas.rs&nbsp;&nbsp;"]
+        fontdue["&nbsp;&nbsp;fontdue: blend print&nbsp;&nbsp;"]
+        encode["&nbsp;&nbsp;webpx: encode webp&nbsp;&nbsp;"]
+        output["&nbsp;&nbsp;bytes::bytes&nbsp;&nbsp;"]
     end
 
-    BytesOutput -->|Return bytes| BlairGo
-    BlairGo -->|attachment://drop.webp| DiscordAPI
+    discord -- request --> blair
+    blair -- /render/drop/ --> server
 
-    classDef discord fill:#5865F2,stroke:#4752C4,color:#fff,stroke-width:3px
-    classDef bot fill:#43B581,stroke:#2A7F4E,color:#fff,stroke-width:3px
-    classDef service fill:#FAA61A,stroke:#C17D0A,color:#fff,stroke-width:3px
-    classDef cache fill:#EB459E,stroke:#B83279,color:#fff,stroke-width:3px
-    classDef decision fill:#EB459E,stroke:#B83279,color:#fff,stroke-width:3px
-    classDef storage fill:#72B7D6,stroke:#4A7FA7,color:#fff,stroke-width:3px
-    classDef processing fill:#A78BFA,stroke:#7C3AED,color:#fff,stroke-width:3px
-    classDef output fill:#06B6D4,stroke:#0891B2,color:#fff,stroke-width:3px
+    server --> cache
+    cache -- cache miss --> disk
+    disk --> decode
+    decode --> cache
+    cache -- cache hit --> canvas
+    canvas --> fontdue
+    fontdue --> encode
+    encode --> output
 
-    class DiscordAPI discord
-    class BlairGo bot
-    class Sumi service
-    class CardCache decision
-    class CardAssets storage
-    class WebpxDecode processing
-    class CanvasComposite processing
-    class Fontdue processing
-    class WebpxEncode processing
-    class BytesOutput output
+    output -- return bytes --> blair
+    blair -- attachment --> discord
+
+    classDef base fill:#cdb4db,stroke:none,color:#1e1e1e,rx:12,ry:12
+    classDef peach fill:#ffb4a2,stroke:none,color:#1e1e1e,rx:12,ry:12
+    classDef coral fill:#f18a83,stroke:none,color:#1e1e1e,rx:12,ry:12
+    classDef blue fill:#bde0fe,stroke:none,color:#1e1e1e,rx:12,ry:12
+
+    class discord,disk,fontdue base
+    class blair,decode,output peach
+    class server,canvas coral
+    class cache,encode blue
 ```
+
+ 
