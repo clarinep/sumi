@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 styled_line.push(' ');
                 continue;
             }
-            
+
             // Smoother horizontal-heavy gradient
             let progress_x = x as f32 / num_chars;
             let progress_y = y as f32 / num_lines;
