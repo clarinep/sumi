@@ -68,8 +68,8 @@ graph TD
     DiscordAPI[Discord API]
     BlairGo[blair-go]
     Sumi[Axum]
-    CardCache{DashMap Cache}
-    CardAssets[(Card Assets - Disk)]
+    CardCache{Dashmap}
+    CardAssets[(Cards - Disk)]
     WebpxDecode[webpx<br/>decode to rgba]
     CanvasComposite[canvas.rs<br/>makes canvas]
     Fontdue[fontdue<br/>render print numbers]
