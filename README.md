@@ -79,7 +79,7 @@ flowchart TD
         disk["&nbsp;&nbsp;cards disk&nbsp;&nbsp;"]
         decode["&nbsp;&nbsp;webpx: decode rgba&nbsp;&nbsp;"]
         canvas["&nbsp;&nbsp;canvas.rs&nbsp;&nbsp;"]
-        fontdue["&nbsp;&nbsp;fontdue: blend print&nbsp;&nbsp;"]
+        fontdue["&nbsp;&nbsp;fontdue: render print&nbsp;&nbsp;"]
         encode["&nbsp;&nbsp;webpx: encode webp&nbsp;&nbsp;"]
         output["&nbsp;&nbsp;bytes::bytes&nbsp;&nbsp;"]
     end
