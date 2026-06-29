@@ -55,8 +55,11 @@ just list
 ```mermaid
 ---
 config:
-  theme: dark
+  theme: base
   themeVariables:
+    background: "transparent"
+    clusterBkg: "transparent"
+    clusterBorder: "transparent"
     primaryColor: "#1E1E1E"
     primaryTextColor: "#FFFFFF"
     lineColor: "#FFFFFF"
@@ -79,7 +82,7 @@ graph TD
     DiscordAPI -->|Request| BlairGo
     BlairGo -->|http /render/drop/| Sumi
 
-    subgraph SumiRenderer["Sumi"]
+    subgraph SumiRenderer[" "]
         Sumi --> CardCache
         CardCache -->|Cache Miss| CardAssets
         CardAssets --> WebpxDecode
@@ -112,4 +115,4 @@ graph TD
     class Fontdue processing
     class WebpxEncode processing
     class BytesOutput output
- ```
+```
