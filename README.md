@@ -68,24 +68,26 @@ graph TD
     DiscordAPI[Discord API]
     BlairGo[blair-go]
     Sumi[Axum]
-    MokaCache{Moka Cache}
+    CardCache{DashMap Cache}
     CardAssets[(Card Assets - Disk)]
-    ImageCrate[webpx<br/>decode + composite]
-    Fontdue[fontdue<br/>add in print numbers]
-    Webpx[webpx<br/>libwebp C FFI -> encode 80% Q]
+    WebpxDecode[webpx<br/>decode to rgba]
+    CanvasComposite[canvas.rs<br/>makes canvas]
+    Fontdue[fontdue<br/>render print numbers]
+    WebpxEncode[webpx<br/>encode to webp]
     BytesOutput[bytes::Bytes]
 
     DiscordAPI -->|Request| BlairGo
     BlairGo -->|http /render/drop/| Sumi
 
     subgraph SumiRenderer["Sumi"]
-        Sumi --> MokaCache
-        MokaCache -->|Cache Miss| CardAssets
-        MokaCache -->|Cache Hit| ImageCrate
-        CardAssets --> ImageCrate
-        ImageCrate --> Fontdue
-        Fontdue --> Webpx
-        Webpx --> BytesOutput
+        Sumi --> CardCache
+        CardCache -->|Cache Miss| CardAssets
+        CardAssets --> WebpxDecode
+        WebpxDecode --> CardCache
+        CardCache -->|Cache Hit| CanvasComposite
+        CanvasComposite --> Fontdue
+        Fontdue --> WebpxEncode
+        WebpxEncode --> BytesOutput
     end
 
     BytesOutput -->|Return bytes| BlairGo
@@ -103,10 +105,11 @@ graph TD
     class DiscordAPI discord
     class BlairGo bot
     class Sumi service
-    class MokaCache decision
+    class CardCache decision
     class CardAssets storage
-    class ImageCrate processing
+    class WebpxDecode processing
+    class CanvasComposite processing
     class Fontdue processing
-    class Webpx processing
+    class WebpxEncode processing
     class BytesOutput output
- ``` 
+ ```
