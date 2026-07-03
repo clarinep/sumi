@@ -6,6 +6,7 @@ mod routes;
 use std::{error::Error, fmt::Write, net::SocketAddr, panic, sync::Arc};
 
 use axum::{Router, routing::get, serve};
+#[cfg(not(miri))]
 use mimalloc::MiMalloc;
 use tokio::{net::TcpListener, signal};
 use tracing_subscriber::EnvFilter;
@@ -43,6 +44,7 @@ fn aegis() {
 
 // we use microsoft mimalloc as it handles memory better
 // it will only help when tokio is running multi threads
+#[cfg(not(miri))]
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
@@ -75,7 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 styled_line.push(' ');
                 continue;
             }
-
+            
             // Smoother horizontal-heavy gradient
             let progress_x = x as f32 / num_chars;
             let progress_y = y as f32 / num_lines;
