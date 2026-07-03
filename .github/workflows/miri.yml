@@ -1,0 +1,28 @@
+name: Miri Check
+
+on:
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
+
+jobs:
+  miri:
+    name: Run Miri
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Nightly with Miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: Run cargo miri setup
+        run: cargo miri setup
+
+      - name: Run tests with Miri
+        run: cargo miri test
+        env:
+          # -Zmiri-strict-provenance ensures strict pointer provenance rules.
+          # -Zmiri-disable-isolation allows Miri to interact with the host system 
+          # (e.g., file system access, environment variables) which is often needed for tests.
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
