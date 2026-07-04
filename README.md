@@ -48,10 +48,6 @@ just kill
 just list
 ```
 
-<div align="right">
-  <img src="https://files.catbox.moe/d04rv6.webp" alt="Sumi benchmark" width="393">
-</div>
-
 ```mermaid
 ---
 config:
