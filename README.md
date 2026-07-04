@@ -56,7 +56,7 @@ config:
     background: "transparent"
     clusterBkg: "transparent"
     clusterBorder: "transparent"
-    lineColor: "#cdb4db"
+    lineColor: "#a8e6cf"
     primaryTextColor: "#e2e2e2"
     edgeLabelBackground: "transparent"
     fontFamily: "ui-sans-serif, system-ui, sans-serif"
@@ -75,7 +75,7 @@ flowchart TD
         disk["&nbsp;&nbsp;cards disk&nbsp;&nbsp;"]
         decode["&nbsp;&nbsp;webpx: decode rgba&nbsp;&nbsp;"]
         canvas["&nbsp;&nbsp;canvas.rs&nbsp;&nbsp;"]
-        fontdue["&nbsp;&nbsp;fontdue: render print&nbsp;&nbsp;"]
+        fontdue["&nbsp;&nbsp;fontdue: blend print&nbsp;&nbsp;"]
         encode["&nbsp;&nbsp;webpx: encode webp&nbsp;&nbsp;"]
         output["&nbsp;&nbsp;bytes::bytes&nbsp;&nbsp;"]
     end
@@ -95,7 +95,7 @@ flowchart TD
     output -- return bytes --> blair
     blair -- attachment --> discord
 
-    classDef base fill:#cdb4db,stroke:none,color:#1e1e1e,rx:12,ry:12
+    classDef base fill:#a8e6cf,stroke:none,color:#1e1e1e,rx:12,ry:12
     classDef peach fill:#ffb4a2,stroke:none,color:#1e1e1e,rx:12,ry:12
     classDef coral fill:#f18a83,stroke:none,color:#1e1e1e,rx:12,ry:12
     classDef blue fill:#bde0fe,stroke:none,color:#1e1e1e,rx:12,ry:12
@@ -105,5 +105,3 @@ flowchart TD
     class server,canvas coral
     class cache,encode blue
 ```
-
- 
