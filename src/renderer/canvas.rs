@@ -1,6 +1,7 @@
 use std::{sync::Mutex, time::Instant};
 
 use bytes::Bytes;
+use itoa::Buffer;
 
 use super::{
     encoder::encode_webp,
@@ -69,7 +70,7 @@ pub fn create_drop_image(
     copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
     copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
 
-    let mut left_itoa = itoa::Buffer::new();
+    let mut left_itoa = Buffer::new();
     let left_print_str = left_itoa.format(left_card_print);
 
     let mut left_print_buf = [0u8; 32];
@@ -78,7 +79,7 @@ pub fn create_drop_image(
     left_print_buf[1..left_print_len].copy_from_slice(left_print_str.as_bytes());
     let left_print = &left_print_buf[..left_print_len];
 
-    let mut right_itoa = itoa::Buffer::new();
+    let mut right_itoa = Buffer::new();
     let right_print_str = right_itoa.format(right_card_print);
 
     let mut right_print_buf = [0u8; 32];
