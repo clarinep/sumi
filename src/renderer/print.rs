@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{array, sync::LazyLock};
 
 use fontdue::{Font, FontSettings};
 
@@ -44,7 +44,7 @@ static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
 
     LetterSet {
         hash: render_char('#'),
-        digits: std::array::from_fn(|i| render_char((b'0' + i as u8) as char)),
+        digits: array::from_fn(|i| render_char((b'0' + i as u8) as char)),
     }
 });
 
