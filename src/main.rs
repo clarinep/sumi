@@ -1,17 +1,16 @@
-// https://www.microsoft.com/en-us/research/wp-content/uploads/2019/06/mimalloc-tr-v1.pdf
-
 mod config;
+mod error;
 mod logger;
 mod renderer;
 mod routes;
+mod stats;
 
-use std::{error::Error, fmt::Write, net::SocketAddr, panic, sync::Arc};
+use std::{error::Error, net::SocketAddr, panic, sync::Arc};
 
 use axum::{Router, routing::get, serve};
-#[cfg(not(miri))]
 use mimalloc::MiMalloc;
 use tokio::{net::TcpListener, signal};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::{
     config::Config,
@@ -47,11 +46,9 @@ fn aegis() {
 // we use microsoft mimalloc as it handles memory better
 // it will only help when tokio is running multi threads
 // https://www.microsoft.com/en-us/research/wp-content/uploads/2019/06/mimalloc-tr-v1.pdf
-#[cfg(not(miri))]
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     aegis();
@@ -59,49 +56,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sumi=debug,info"));
 
-    tracing_subscriber::fmt().with_env_filter(filter).event_format(logger::LogFormatter).init();
+    fmt().with_env_filter(filter).event_format(logger::LogFormatter).init();
 
     let welcomer = include_str!("ascii.txt");
-    println!();
+    println!("\n\x1b[38;2;168;230;207m{welcomer}\x1b[0m");
 
-    let lines: Vec<&str> = welcomer.lines().collect();
-    let num_lines = lines.len().max(1) as f32;
-
-    // Sumi color palette: mint green transitioning into bright peach-orange
-    let (r1, g1, b1) = (168.0_f32, 230.0_f32, 207.0_f32);
-    let (r2, g2, b2) = (255.0_f32, 192.0_f32, 120.0_f32);
-
-    for (y, line) in lines.into_iter().enumerate() {
-        let mut styled_line = String::with_capacity(line.len() * 20);
-        let num_chars = line.chars().count().max(1) as f32;
-
-        for (x, ch) in line.chars().enumerate() {
-            if ch == ' ' {
-                styled_line.push(' ');
-                continue;
-            }
-            
-            // Smoother horizontal-heavy gradient
-            let progress_x = x as f32 / num_chars;
-            let progress_y = y as f32 / num_lines;
-            let t = (progress_x * 0.8 + progress_y * 0.2).clamp(0.0, 1.0);
-
-            // Simple linear interpolation
-            let r = (r2 - r1).mul_add(t, r1) as u8;
-            let g = (g2 - g1).mul_add(t, g1) as u8;
-            let b = (b2 - b1).mul_add(t, b1) as u8;
-
-            let _ = write!(styled_line, "\x1b[38;2;{r};{g};{b}m{ch}");
-        }
-        println!("{styled_line}\x1b[0m");
-    }
-
-    let cfg = Config::load();
+    let cfg = Config::from_env();
 
     tracing::info!("baking in lexend deca font..");
     init_font();
 
-    let renderer = match CardRenderer::new(cfg.cards_dir.clone()) {
+    let renderer = match CardRenderer::new(&cfg.cards_dir) {
         Ok(r) => r,
         Err(e) => {
             tracing::error!("failed to wake sumi up..\n      reason: {}", e);
@@ -110,7 +75,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     let state = Arc::new(renderer);
 
-    // prewarm cache di belakang
     state.card_cache.start_prewarm();
 
     let app = Router::new()
