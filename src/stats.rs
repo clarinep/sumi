@@ -1,0 +1,35 @@
+use std::{
+    fs,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
+#[derive(Default, Debug)]
+pub struct AppStats {
+    pub successful_renders: AtomicU64,
+    pub failed_renders: AtomicU64,
+    pub total_image_bytes: AtomicU64,
+    pub total_render_time_ms: AtomicU64,
+}
+
+impl AppStats {
+    pub fn record_success(&self, bytes: u64, render_time_ms: u64) {
+        self.successful_renders.fetch_add(1, Ordering::Relaxed);
+        self.total_image_bytes.fetch_add(bytes, Ordering::Relaxed);
+        self.total_render_time_ms.fetch_add(render_time_ms, Ordering::Relaxed);
+    }
+
+    pub fn record_failure(&self) {
+        self.failed_renders.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn current_memory_usage_mb(&self) -> f64 {
+        if let Ok(statm) = fs::read_to_string("/proc/self/statm") {
+            if let Some(rss) = statm.split_whitespace().nth(1) {
+                if let Ok(pages) = rss.parse::<u64>() {
+                    return (pages * 4096) as f64 / 1_048_576.0;
+                }
+            }
+        }
+        0.0
+    }
+}
