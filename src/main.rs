@@ -1,3 +1,5 @@
+// https://www.microsoft.com/en-us/research/wp-content/uploads/2019/06/mimalloc-tr-v1.pdf
+
 mod config;
 mod logger;
 mod renderer;
@@ -44,6 +46,7 @@ fn aegis() {
 
 // we use microsoft mimalloc as it handles memory better
 // it will only help when tokio is running multi threads
+// https://www.microsoft.com/en-us/research/wp-content/uploads/2019/06/mimalloc-tr-v1.pdf
 #[cfg(not(miri))]
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
