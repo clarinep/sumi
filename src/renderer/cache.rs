@@ -1,19 +1,21 @@
 // due to static rng cache hit rates we will use simple read only cache system
 // pas startup kita warming memory sampe deket limit 2 gb terus freeze
 // di runtime klo hantam hit kita serve pakai dashmap sama ahash dibanding siphash lebih cepet.
-// klo miss kita decode dr disk tapi ga usah masukin memory biar cpu dan ram minimal
+// klo miss kita decode dr disk tapi ga usah masukin memory biar minimal instruksi
 
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     fs,
+    num::NonZero,
     path::Path,
     sync::{
         Arc,
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
+    thread,
 };
 
-use ahash::RandomState;
+use ahash::{HashMap, RandomState};
 use dashmap::DashMap;
 use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
 use webpx::Decoder;
@@ -25,24 +27,16 @@ use crate::renderer::{
 
 const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 gb limit in kilobyte
 
-#[derive(Default, Debug)]
-pub struct CacheStats {
-    pub hits: AtomicU64,
-    pub misses: AtomicU64,
-}
-
 // hold cached image and list of file here
 pub struct CardCache {
     memory: Arc<DashMap<Arc<str>, Arc<RawCardImage>, RandomState>>,
-    file_index: Arc<ahash::HashMap<Arc<str>, Box<Path>>>,
-    pub stats: CacheStats,
+    file_index: Arc<HashMap<Arc<str>, Box<Path>>>,
 }
 
 impl Debug for CardCache {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("CardCache")
             .field("file_index_len", &self.file_index.len())
-            .field("stats", &self.stats)
             .finish_non_exhaustive() // intentional for hashmap
     }
 }
@@ -61,15 +55,14 @@ impl CardCache {
         Ok(Self {
             memory: Arc::new(DashMap::with_hasher(RandomState::new())),
             file_index: Arc::new(file_index),
-            stats: CacheStats::default(),
         })
     }
 
     // makes a list of all image files in the folder
     // we check this list first so we dont waste time looking for missing files.
-    // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
-    fn build_card_list(cards_dir: &Path) -> ahash::HashMap<Arc<str>, Box<Path>> {
-        fn find_card(base_dir: &Path, dir: &Path, index: &mut ahash::HashMap<Arc<str>, Box<Path>>) {
+    // this also introduces breaking change (v1.2.0) as hashmap now saves cards as e.g. genshin/fischl_1
+    fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, Box<Path>> {
+        fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, Box<Path>>) {
             let Ok(entries) = fs::read_dir(dir) else {
                 return;
             };
@@ -97,7 +90,7 @@ impl CardCache {
             }
         }
 
-        let mut index = ahash::HashMap::default();
+        let mut index = HashMap::default();
         find_card(cards_dir, cards_dir, &mut index);
         index
     }
@@ -116,7 +109,7 @@ impl CardCache {
             let warmed = Arc::new(AtomicUsize::new(0));
             let warmed_kb = Arc::new(AtomicU64::new(0));
             let warmed_disk_bytes = Arc::new(AtomicU64::new(0));
-            let cores = std::thread::available_parallelism().map_or(8, std::num::NonZero::get);
+            let cores = thread::available_parallelism().map_or(8, NonZero::get);
             let concurrent_tasks = cores * 2;
             let semaphore = Arc::new(Semaphore::new(concurrent_tasks));
 
@@ -155,7 +148,7 @@ impl CardCache {
 
                     let result = task::spawn_blocking(move || {
                         let decode_res =
-                            Decoder::new(&file_bytes).and_then(webpx::Decoder::decode_rgba_raw);
+                            Decoder::new(&file_bytes).and_then(Decoder::decode_rgba_raw);
 
                         decode_res.ok().map(|(pixels, width, height)| {
                             Arc::new(RawCardImage {
@@ -194,24 +187,14 @@ impl CardCache {
         });
     }
 
-    pub fn get_stats(&self) -> (u64, u64, f64) {
-        let hits = self.stats.hits.load(Ordering::Relaxed);
-        let misses = self.stats.misses.load(Ordering::Relaxed);
-        let total = hits + misses;
-        let hit_rate = if total == 0 { 0.0 } else { (hits as f64 / total as f64) * 100.0 };
-        (hits, misses, hit_rate)
-    }
-
     // gets decoded card image from cache memory map.
     // miss baca dari disk langsung (juga ga dimasukin ke mem map, liat line 4)
-    pub async fn get_card(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
+    pub async fn get(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
         if let Some(img) = self.memory.get(name) {
-            self.stats.hits.fetch_add(1, Ordering::Relaxed);
             tracing::trace!("cache hit for {}", name);
             return Ok(img.value().clone());
         }
 
-        self.stats.misses.fetch_add(1, Ordering::Relaxed);
         tracing::trace!("cache miss for {}", name);
 
         let path = self
