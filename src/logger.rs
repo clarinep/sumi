@@ -15,7 +15,7 @@ macro_rules! rgb {
     };
 }
 
-const COLOR_TRACE: &str = rgb!(205, 180, 219);
+const COLOR_TRACE: &str = rgb!(168, 230, 207);
 const COLOR_DEBUG: &str = rgb!(189, 224, 254);
 const COLOR_INFO: &str = rgb!(241, 138, 131);
 const COLOR_WARN: &str = rgb!(255, 180, 162);
