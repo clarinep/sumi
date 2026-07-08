@@ -1,7 +1,5 @@
-use std::{
-    fs,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Default, Debug)]
 pub struct AppStats {
@@ -22,7 +20,7 @@ impl AppStats {
         self.failed_renders.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn current_memory_usage_mb() -> f64 { 
+    pub fn current_memory_usage_mb() -> f64 {
         if let Ok(statm) = fs::read_to_string("/proc/self/statm") {
             if let Some(rss) = statm.split_whitespace().nth(1) {
                 if let Ok(pages) = rss.parse::<u64>() {
