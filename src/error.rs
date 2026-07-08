@@ -14,7 +14,7 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_msg) = match self {
-            AppError::Render { err, left, right } => {
+            Self::Render { err, left, right } => {
                 let (status, msg) = match &err {
                     RenderError::CardNotFound(name) => {
                         (StatusCode::NOT_FOUND, format!("card not found: {name}"))
