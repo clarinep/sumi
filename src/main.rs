@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let welcomer = include_str!("ascii.txt");
     println!();
-    for line in welcomer.lines() {
+    for _line in welcomer.lines() {
         println!("\n\x1b[38;2;255;180;162m{welcomer}\x1b[0m");
     }
 
