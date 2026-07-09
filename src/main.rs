@@ -61,10 +61,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     fmt().with_env_filter(filter).event_format(logger::LogFormatter).init();
 
     let welcomer = include_str!("ascii.txt");
-    println!();
-    for _line in welcomer.lines() {
-        println!("\n\x1b[38;2;255;180;162m{welcomer}\x1b[0m");
-    }
+    let colored_welcomer = welcomer.replace('\n', "\n\x1b[38;2;255;180;162m");
+    println!("\n\x1b[38;2;255;180;162m{colored_welcomer}\x1b[0m");
 
     let cfg = Config::from_env();
 
