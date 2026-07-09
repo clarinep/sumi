@@ -45,6 +45,8 @@ fn aegis() {
 
 // we use microsoft mimalloc as it handles memory better
 // it will only help when tokio is running multi threads
+// https://github.com/purpleprotocol/mimalloc_rust
+// https://github.com/microsoft/mimalloc
 // https://www.microsoft.com/en-us/research/wp-content/uploads/2019/06/mimalloc-tr-v1.pdf
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
@@ -96,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn nap() {
     if let Err(e) = signal::ctrl_c().await {
-        tracing::error!("sumi failed to sleep..?({})", e);
+        tracing::error!("sumi failed to sleep..? ({})", e);
     }
     tracing::info!("you gave sumi way too much caffeine..");
 }
