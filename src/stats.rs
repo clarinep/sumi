@@ -24,7 +24,6 @@ impl AppStats {
             && let Some(rss) = statm.split_whitespace().nth(1)
             && let Ok(pages) = rss.parse::<u64>()
         {
-            // Assuming typical page size of 4096 bytes (4KB)
             return (pages * 4096) as f64 / 1_048_576.0;
         }
         0.0
