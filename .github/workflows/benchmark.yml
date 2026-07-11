@@ -3,24 +3,35 @@ name: Benchmark sumi
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Setup rust
-      run: rustup toolchain install stable
+    - name: Install rust
+      run: rustup toolchain install nightly
+      
+    - name: Cache rust environment
+      uses: Swatinem/rust-cache@v2
 
-    - name: Setup wrk
+    - name: Install wrk
       run: sudo apt-get update && sudo apt-get install -y wrk
 
     - name: Build sumi
-      run: cargo build --release
+      run: cargo +nightly build --release
 
-    - name: Run benchmark
+    - name: Make cards.txt from assets folder
+      run: |
+        find assets -name "*.webp" | sed 's|assets/||' | sed 's|\.webp||' > cards.txt
+        echo "generated cards.txt"
+        cat cards.txt
+
+    - name: Start sumi and Run benchmark
       env:
         CARDS_DIR: "assets"
         PORT: 6767
