@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::fs;
 
 #[derive(Default, Debug)]
 pub struct AppStats {
@@ -20,11 +21,12 @@ impl AppStats {
     }
 
     pub async fn current_memory_usage_mb() -> f64 {
-        if let Ok(statm) = tokio::fs::read_to_string("/proc/self/statm").await
-            && let Some(rss) = statm.split_whitespace().nth(1)
-            && let Ok(pages) = rss.parse::<u64>()
-        {
-            return (pages * 4096) as f64 / 1_048_576.0;
+        if let Ok(statm) = fs::read_to_string("/proc/self/statm").await {
+            if let Some(rss) = statm.split_whitespace().nth(1) {
+                if let Ok(pages) = rss.parse::<u64>() {
+                    return (pages * 4096) as f64 / 1_048_576.0;
+                }
+            }
         }
         0.0
     }
