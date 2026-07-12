@@ -22,7 +22,7 @@ use webpx::Decoder;
 
 use crate::renderer::{
     error::RenderError,
-    pixels::{self, RawCardImage},
+    pixels::{RawCardImage, Size},
 };
 
 const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 gb limit in kilobyte
@@ -30,7 +30,7 @@ const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 gb limit in kilobyte
 // hold cached image and list of file here
 pub struct CardCache {
     memory: Arc<DashMap<Arc<str>, Arc<RawCardImage>, RandomState>>,
-    file_index: Arc<HashMap<Arc<str>, Box<Path>>>,
+    file_index: Arc<HashMap<Arc<str>, Arc<Path>>>,
 }
 
 impl Debug for CardCache {
@@ -60,9 +60,9 @@ impl CardCache {
 
     // makes a list of all image files in the folder
     // we check this list first so we dont waste time looking for missing files.
-    // this also introduces breaking change (v1.2.0) as hashmap now saves cards as e.g. genshin/fischl_1
-    fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, Box<Path>> {
-        fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, Box<Path>>) {
+    // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
+    fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, Arc<Path>> {
+        fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, Arc<Path>>) {
             let Ok(entries) = fs::read_dir(dir) else {
                 return;
             };
@@ -82,7 +82,7 @@ impl CardCache {
                     if let Ok(rel_path) = path.strip_prefix(base_dir) {
                         let key_path = rel_path.with_extension("");
                         let name_str = key_path.to_string_lossy().replace('\\', "/");
-                        index.insert(name_str.into(), path.into_boxed_path());
+                        index.insert(name_str.into(), path.into());
                     }
                 } else if matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg") {
                     tracing::warn!("ignored '{}' (only webp supported)", path.display());
@@ -152,7 +152,7 @@ impl CardCache {
 
                         decode_res.ok().map(|(pixels, width, height)| {
                             Arc::new(RawCardImage {
-                                size: pixels::Size::new(width, height),
+                                size: Size::new(width, height),
                                 pixels: pixels.into_boxed_slice(),
                             })
                         })
@@ -229,7 +229,7 @@ impl CardCache {
                 })?;
 
             let image = RawCardImage {
-                size: pixels::Size::new(width, height),
+                size: Size::new(width, height),
                 pixels: pixels.into_boxed_slice(),
             };
             Ok(Arc::new(image))
