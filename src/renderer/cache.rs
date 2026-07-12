@@ -228,10 +228,8 @@ impl CardCache {
                     ))
                 })?;
 
-            let image = RawCardImage {
-                size: Size::new(width, height),
-                pixels: pixels.into_boxed_slice(),
-            };
+            let image =
+                RawCardImage { size: Size::new(width, height), pixels: pixels.into_boxed_slice() };
             Ok(Arc::new(image))
         })
         .await

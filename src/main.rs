@@ -10,7 +10,7 @@ use std::{error::Error, net::SocketAddr, panic, sync::Arc};
 use axum::{Router, routing::get, serve};
 use mimalloc::MiMalloc;
 use tokio::{net::TcpListener, signal};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::{
     config::Config,
