@@ -10,10 +10,11 @@ use std::{error::Error, net::SocketAddr, panic, sync::Arc};
 use axum::{Router, routing::get, serve};
 use mimalloc::MiMalloc;
 use tokio::{net::TcpListener, signal};
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::{
     config::Config,
+    logger::LogFormatter,
     renderer::{CardRenderer, print::init_font},
     routes::{handle_metrics, handle_render_drop},
 };
@@ -58,7 +59,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sumi=debug,info"));
 
-    fmt().with_env_filter(filter).event_format(logger::LogFormatter).init();
+    fmt().with_env_filter(filter).event_format(LogFormatter).init();
 
     let welcomer = include_str!("ascii.txt");
     let colored_welcomer = welcomer.replace('\n', "\n\x1b[38;2;255;180;162m");
@@ -99,7 +100,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn nap() {
     if let Err(e) = signal::ctrl_c().await {
-        tracing::error!("sumi failed to sleep..? ({})", e);
+        tracing::error!("sumi failed to sleep..?({})", e);
     }
     tracing::info!("you gave sumi way too much caffeine..");
 }
