@@ -2,8 +2,8 @@ use std::{env, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub port: u16,
     pub cards_dir: PathBuf,
+    pub port: u16,
 }
 
 impl Config {
@@ -31,7 +31,7 @@ impl Config {
             cards_dir.display()
         );
 
-        Self { port, cards_dir }
+        Self { cards_dir, port }
     }
 }
 
