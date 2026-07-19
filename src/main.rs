@@ -56,7 +56,6 @@ static ALLOC: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // ANSI color sequence and reset
     const COLOR_SUMI: &str = "\x1b[38;2;255;180;162m";
     const RESET: &str = "\x1b[0m";
 
