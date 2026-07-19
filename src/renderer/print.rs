@@ -94,8 +94,8 @@ pub fn draw_print_number(
             let canvas_w = usize::try_from(canvas_width).map_err(|e| {
                 RenderError::Internal(format!("failed to convert canvas width: {e}"))
             })?;
-            let canvas_col_idx =
-                usize::try_from(pos.x + i32::from(letter.offset_x) + draw_x_start).map_err(|e| {
+            let canvas_col_idx = usize::try_from(pos.x + i32::from(letter.offset_x) + draw_x_start)
+                .map_err(|e| {
                     RenderError::Internal(format!("failed to convert canvas column index: {e}"))
                 })?;
             let canvas_pixel_start = (canvas_row_idx * canvas_w + canvas_col_idx) * 4;
