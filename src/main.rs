@@ -5,11 +5,24 @@ mod renderer;
 mod routes;
 mod stats;
 
-use std::{error::Error, net::SocketAddr, panic, sync::Arc};
+use std::{
+    error::Error,
+    future::pending,
+    net::SocketAddr,
+    panic,
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::{Router, routing::get, serve};
 use mimalloc::MiMalloc;
-use tokio::{net::TcpListener, signal};
+use tokio::{
+    net::TcpListener,
+    signal,
+    time::timeout,
+};
+#[cfg(unix)]
+use tokio::signal::unix::{signal as unix_signal, SignalKind};
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::{
@@ -93,14 +106,54 @@ async fn main() -> Result<(), Box<dyn Error>> {
     serve(listener, app).with_graceful_shutdown(nap()).await?;
 
     tracing::info!("sumi is going to sleep, finishing tasks..");
-    state.wait_for_tasks_to_finish().await;
+    match timeout(Duration::from_secs(10), state.wait_for_tasks_to_finish()).await {
+        Ok(_) => tracing::info!("sumi is sleeping.. zZz"),
+        Err(_) => tracing::error!("sumi refused to sleep in time.. pulling the blanket anyway!"),
+    }
 
     Ok(())
 }
 
+// https://github.com/tokio-rs/axum/blob/main/examples/graceful-shutdown/src/main.rs
+// https://tokio.rs/tokio/topics/shutdown
 async fn nap() {
-    if let Err(e) = signal::ctrl_c().await {
-        tracing::error!("sumi failed to sleep..?({})", e);
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("sumi couldn't set up ctrl+c..");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        let mut sigterm = match unix_signal(SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("sumi couldn't hear the alarm.. reason: {e}");
+                pending()
+            }
+        };
+
+        let mut sigquit = match unix_signal(SignalKind::quit()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("sumi couldn't hear the alarm.. reason: {e}");
+                pending()
+            }
+        };
+
+        tokio::select! {
+            _ = sigterm.recv() => {},
+            _ = sigquit.recv() => {},
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
     }
-    tracing::info!("you gave sumi way too much caffeine..");
+
+    tracing::info!("sumi is yawning, time to take a nap..");
 }
