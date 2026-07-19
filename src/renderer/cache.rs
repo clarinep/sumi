@@ -17,7 +17,7 @@ use std::{
 
 use ahash::{HashMap, RandomState};
 use dashmap::DashMap;
-use tokio::{fs as tokio_fs, spawn, sync::Semaphore, task};
+use tokio::{fs as tokio_fs, task::JoinSet};
 use webpx::Decoder;
 
 use crate::renderer::{
@@ -109,9 +109,9 @@ impl CardCache {
             let warmed = Arc::new(AtomicUsize::new(0));
             let warmed_kb = Arc::new(AtomicU64::new(0));
             let warmed_disk_bytes = Arc::new(AtomicU64::new(0));
-            let cores = std::thread::available_parallelism().map_or(8, std::num::NonZero::get);
+            let cores = thread::available_parallelism().map_or(8, NonZero::get);
             let concurrent_tasks = cores * 2;
-            let mut join_set = tokio::task::JoinSet::new();
+            let mut join_set = JoinSet::new();
 
             for (name, path) in file_index_clone.iter() {
                 // check if we reached 90% cap before spawning more work
