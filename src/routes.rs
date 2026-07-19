@@ -12,7 +12,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{error::Error, metrics::Metrics, renderer::CardRenderer};
+use crate::{error::Error, renderer::CardRenderer};
 
 // the data we expect when blair asks for an image.
 // we need character name from its filename and also print nums

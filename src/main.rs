@@ -101,9 +101,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing::info!("sumi is going to sleep, finishing tasks..");
     if timeout(Duration::from_secs(10), state.wait_for_tasks_to_finish()).await.is_ok() {
-        tracing::info!("sumi is sleeping.. zZz")
+        tracing::info!("sumi is sleeping.. zZz");
     } else {
-        tracing::error!("sumi refused to sleep in time.. pulling the blanket anyway!")
+        tracing::error!("sumi refused to sleep in time.. pulling the blanket anyway!");
     }
 
     Ok(())
