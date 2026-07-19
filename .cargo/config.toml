@@ -7,3 +7,7 @@ linker = "rust-lld.exe"
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=lld", "-C", "target-cpu=native"]
+
+[env]
+CFLAGS = "-march=native -O3"
+CXXFLAGS = "-march=native -O3"
