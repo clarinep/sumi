@@ -17,7 +17,7 @@ use std::{
 
 use ahash::{HashMap, RandomState};
 use dashmap::DashMap;
-use tokio::{fs as tokio_fs, task::JoinSet};
+use tokio::{fs as tokio_fs, spawn, task::{self, JoinSet}};
 use webpx::Decoder;
 
 use crate::renderer::{
