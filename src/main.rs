@@ -1,9 +1,9 @@
 mod config;
 mod error;
 mod logger;
+mod metrics;
 mod renderer;
 mod routes;
-mod stats;
 
 use std::{error::Error, future::pending, net::SocketAddr, panic, sync::Arc, time::Duration};
 
@@ -56,7 +56,6 @@ static ALLOC: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Soft peach/pink RGB color sequence (#FFB4A2) and ANSI reset
     const COLOR_SUMI: &str = "\x1b[38;2;255;180;162m";
     const RESET: &str = "\x1b[0m";
 
@@ -102,9 +101,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing::info!("sumi is going to sleep, finishing tasks..");
     if timeout(Duration::from_secs(10), state.wait_for_tasks_to_finish()).await.is_ok() {
-        tracing::info!("sumi is sleeping.. zZz");
+        tracing::info!("sumi is sleeping.. zZz")
     } else {
-        tracing::error!("sumi refused to sleep in time.. pulling the blanket anyway!");
+        tracing::error!("sumi refused to sleep in time.. pulling the blanket anyway!")
     }
 
     Ok(())
@@ -122,7 +121,7 @@ async fn nap() {
         let mut sigterm = match unix_signal(SignalKind::terminate()) {
             Ok(s) => Some(s),
             Err(e) => {
-                tracing::error!("sumi couldn't hear the alarm.. reason: {e}");
+                tracing::error!("sumi couldn't hear the alarm..\n      reason: {e}");
                 None
             }
         };
@@ -130,7 +129,7 @@ async fn nap() {
         let mut sigquit = match unix_signal(SignalKind::quit()) {
             Ok(s) => Some(s),
             Err(e) => {
-                tracing::error!("sumi couldn't hear the alarm.. reason: {e}");
+                tracing::error!("sumi couldn't hear the alarm..\n      reason: {e}");
                 None
             }
         };
