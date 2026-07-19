@@ -5,24 +5,13 @@ mod renderer;
 mod routes;
 mod stats;
 
-use std::{
-    error::Error,
-    future::pending,
-    net::SocketAddr,
-    panic,
-    sync::Arc,
-    time::Duration,
-};
+use std::{error::Error, future::pending, net::SocketAddr, panic, sync::Arc, time::Duration};
 
 use axum::{Router, routing::get, serve};
 use mimalloc::MiMalloc;
-use tokio::{
-    net::TcpListener,
-    signal,
-    time::timeout,
-};
 #[cfg(unix)]
-use tokio::signal::unix::{signal as unix_signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal as unix_signal};
+use tokio::{net::TcpListener, signal, time::timeout};
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::{
@@ -112,9 +101,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     serve(listener, app).with_graceful_shutdown(nap()).await?;
 
     tracing::info!("sumi is going to sleep, finishing tasks..");
-    match timeout(Duration::from_secs(10), state.wait_for_tasks_to_finish()).await {
-        Ok(_) => tracing::info!("sumi is sleeping.. zZz"),
-        Err(_) => tracing::error!("sumi refused to sleep in time.. pulling the blanket anyway!"),
+    if let Ok(()) = timeout(Duration::from_secs(10), state.wait_for_tasks_to_finish()).await {
+        tracing::info!("sumi is sleeping.. zZz")
+    } else {
+        tracing::error!("sumi refused to sleep in time.. pulling the blanket anyway!")
     }
 
     Ok(())
@@ -124,9 +114,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 // https://tokio.rs/tokio/topics/shutdown
 async fn nap() {
     let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("sumi couldn't set up ctrl+c..");
+        signal::ctrl_c().await.expect("sumi couldn't set up ctrl+c..");
     };
 
     #[cfg(unix)]
@@ -148,14 +136,14 @@ async fn nap() {
         };
 
         tokio::select! {
-            _ = async {
+            () = async {
                 if let Some(ref mut sig) = sigterm {
                     sig.recv().await;
                 } else {
                     pending::<()>().await;
                 }
             } => {},
-            _ = async {
+            () = async {
                 if let Some(ref mut sig) = sigquit {
                     sig.recv().await;
                 } else {
@@ -169,8 +157,8 @@ async fn nap() {
     let terminate = pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        () = ctrl_c => {},
+        () = terminate => {},
     }
 
     tracing::info!("sumi is yawning, time to take a nap..");
