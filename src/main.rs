@@ -56,16 +56,16 @@ static ALLOC: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // Soft peach/pink RGB color sequence (#FFB4A2) and ANSI reset
+    const COLOR_SUMI: &str = "\x1b[38;2;255;180;162m";
+    const RESET: &str = "\x1b[0m";
+
     aegis();
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sumi=debug,info"));
 
     fmt().with_env_filter(filter).event_format(LogFormatter).init();
-
-    // Soft peach/pink RGB color sequence (#FFB4A2) and ANSI reset
-    const COLOR_SUMI: &str = "\x1b[38;2;255;180;162m";
-    const RESET: &str = "\x1b[0m";
 
     let welcomer = include_str!("ascii.txt");
     println!();
@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     serve(listener, app).with_graceful_shutdown(nap()).await?;
 
     tracing::info!("sumi is going to sleep, finishing tasks..");
-    if let Ok(()) = timeout(Duration::from_secs(10), state.wait_for_tasks_to_finish()).await {
+    if timeout(Duration::from_secs(10), state.wait_for_tasks_to_finish()).await.is_ok() {
         tracing::info!("sumi is sleeping.. zZz")
     } else {
         tracing::error!("sumi refused to sleep in time.. pulling the blanket anyway!")
