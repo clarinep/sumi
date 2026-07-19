@@ -74,9 +74,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     fmt().with_env_filter(filter).event_format(LogFormatter).init();
 
+    // Soft peach/pink RGB color sequence (#FFB4A2) and ANSI reset
+    const COLOR_SUMI: &str = "\x1b[38;2;255;180;162m";
+    const RESET: &str = "\x1b[0m";
+
     let welcomer = include_str!("ascii.txt");
-    let colored_welcomer = welcomer.replace('\n', "\n\x1b[38;2;255;180;162m");
-    println!("\n\x1b[38;2;255;180;162m{colored_welcomer}\x1b[0m");
+    println!();
+    for line in welcomer.lines() {
+        println!("{COLOR_SUMI}{line}{RESET}");
+    }
 
     let cfg = Config::from_env();
 
@@ -126,24 +132,36 @@ async fn nap() {
     #[cfg(unix)]
     let terminate = async {
         let mut sigterm = match unix_signal(SignalKind::terminate()) {
-            Ok(s) => s,
+            Ok(s) => Some(s),
             Err(e) => {
                 tracing::error!("sumi couldn't hear the alarm.. reason: {e}");
-                pending()
+                None
             }
         };
 
         let mut sigquit = match unix_signal(SignalKind::quit()) {
-            Ok(s) => s,
+            Ok(s) => Some(s),
             Err(e) => {
                 tracing::error!("sumi couldn't hear the alarm.. reason: {e}");
-                pending()
+                None
             }
         };
 
         tokio::select! {
-            _ = sigterm.recv() => {},
-            _ = sigquit.recv() => {},
+            _ = async {
+                if let Some(ref mut sig) = sigterm {
+                    sig.recv().await;
+                } else {
+                    pending::<()>().await;
+                }
+            } => {},
+            _ = async {
+                if let Some(ref mut sig) = sigquit {
+                    sig.recv().await;
+                } else {
+                    pending::<()>().await;
+                }
+            } => {},
         }
     };
 
