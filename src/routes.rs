@@ -12,7 +12,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{error::Error, renderer::CardRenderer};
+use crate::{error::{Error, Result}, renderer::CardRenderer};
 
 // the data we expect when blair asks for an image.
 // we need character name from its filename and also print nums
@@ -31,7 +31,7 @@ pub struct RenderRequest {
 pub async fn handle_render_drop(
     State(renderer): State<Arc<CardRenderer>>,
     Query(request): Query<RenderRequest>,
-) -> Result<impl IntoResponse, Error> {
+) -> Result<impl IntoResponse> {
     let start = Instant::now();
     let left_print = request.left_print.unwrap_or(1);
     let right_print = request.right_print.unwrap_or(1);
@@ -57,10 +57,10 @@ pub async fn handle_render_drop(
 pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
     let uptime = renderer.start_time.elapsed().as_secs();
 
-    let successful = renderer.stats.successful_renders.load(Ordering::Relaxed);
-    let failed = renderer.stats.failed_renders.load(Ordering::Relaxed);
-    let total_bytes = renderer.stats.total_image_bytes.load(Ordering::Relaxed);
-    let total_time_ms = renderer.stats.total_render_time_ms.load(Ordering::Relaxed);
+    let successful = renderer.stats.successful_renders();
+    let failed = renderer.stats.failed_renders();
+    let total_bytes = renderer.stats.total_image_bytes();
+    let total_time_ms = renderer.stats.total_render_time_ms();
 
     let avg_render_time_ms =
         if successful > 0 { total_time_ms as f64 / successful as f64 } else { 0.0 };
