@@ -50,7 +50,13 @@ pub fn init_font() {
     LazyLock::force(&LETTERS);
 }
 
-#[allow(clippy::many_single_char_names)]
+// All `as usize` casts are mathematically safe from sign loss:
+// - `canvas_w` and `letter_w` originate from unsigned integers.
+// - `canvas_row_idx` is verified positive by the bounds check on line 81.
+// - `canvas_col_idx` is non-negative because `draw_x_start` offsets any negative horizontal position.
+// - `letter_row_idx` and `letter_col_idx` are positive offsets bounded by zero.
+// - `count` is positive because line 88 ensures `draw_x_end > draw_x_start`.
+#[allow(clippy::many_single_char_names, clippy::cast_sign_loss)]
 pub fn draw_print_number(
     canvas_width: u32,
     canvas_height: u32,
