@@ -1,239 +1,137 @@
-// due to static rng cache hit rates we will use simple read only cache system
-// pas startup kita warming memory sampe deket limit 2 gb terus freeze
-// di runtime klo hantam hit kita serve pakai dashmap sama ahash dibanding siphash lebih cepet.
-// klo miss kita decode dr disk tapi ga usah masukin memory biar minimal instruksi
+use std::{sync::Mutex, time::Instant};
 
-use std::{
-    fmt::{Debug, Formatter, Result as FmtResult},
-    fs,
-    num::NonZero,
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
-    },
-    thread,
-};
+use bytes::Bytes;
+use itoa::Buffer;
 
-use ahash::{HashMap, RandomState};
-use dashmap::DashMap;
-use tokio::{
-    fs as tokio_fs, spawn,
-    task::{self, JoinSet},
-};
-use webpx::Decoder;
-
-use crate::renderer::{
+use super::{
+    encoder::encode_webp,
     error::RenderError,
-    pixels::{RawCardImage, Size},
+    pixels::{Point, RawCardImage},
+    print::{draw_print_number, measure_print_number},
 };
 
-const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 gb limit in kilobyte
+const TEXT_SIZE: f32 = 60.0;
+const TEXT_PADDING_FROM_EDGE: i32 = 190;
+const PADDING_BETWEEN_CARDS: u32 = 20;
+const TEXT_PADDING_FROM_BOTTOM: i32 = 80;
 
-// hold cached image and list of file here
-pub struct CardCache {
-    memory: Arc<DashMap<Arc<str>, Arc<RawCardImage>, RandomState>>,
-    file_index: Arc<HashMap<Arc<str>, Arc<Path>>>,
-}
+#[inline]
+fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, pos: Point<u32>) {
+    let card_row_bytes = (card.size.width * 4) as usize;
+    let total_row_bytes = (total_width * 4) as usize;
+    assert!(total_row_bytes >= card_row_bytes, "total row must be larger than card row");
+    let start_index = ((pos.y * total_width + pos.x) * 4) as usize;
 
-impl Debug for CardCache {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_struct("CardCache")
-            .field("file_index_len", &self.file_index.len())
-            .finish_non_exhaustive() // intentional for hashmap
+    let dest_rows = buffer[start_index..].chunks_exact_mut(total_row_bytes);
+    let src_rows = card.pixels.chunks_exact(card_row_bytes);
+
+    for (dest_row, src_row) in dest_rows.zip(src_rows).take(card.size.height as usize) {
+        if dest_row.len() >= card_row_bytes {
+            dest_row[..card_row_bytes].copy_from_slice(src_row);
+        }
     }
 }
 
-impl CardCache {
-    // sets up the cache and finds all webp card images
-    pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self, RenderError> {
-        let file_index = Self::build_card_list(cards_directory.as_ref());
+static DROP_POOL: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
 
-        if file_index.is_empty() {
-            return Err(RenderError::Internal(
-                "no cards found..? pls check or set path".to_string(),
-            ));
-        }
+// combine two card images and add print numbers = drop image
+// we manually copy pixel rows from the card images. this is much faster
+// than creating a new blank image and using a library to paste the card images to it.
+pub fn create_drop_image(
+    left_card: &RawCardImage,
+    right_card: &RawCardImage,
+    left_card_print: u32,
+    right_card_print: u32,
+) -> Result<Bytes, RenderError> {
+    let start_canvas = Instant::now();
 
-        Ok(Self {
-            memory: Arc::new(DashMap::with_hasher(RandomState::new())),
-            file_index: Arc::new(file_index),
-        })
-    }
+    // count the dimensions of our drop image
+    let left_width = left_card.size.width;
+    let right_width = right_card.size.width;
 
-    // makes a list of all image files in the folder
-    // we check this list first so we dont waste time looking for missing files.
-    // this also introduces breaking change as hashmap now saves cards as e.g. genshin/fischl_1
-    fn build_card_list(cards_dir: &Path) -> HashMap<Arc<str>, Arc<Path>> {
-        fn find_card(base_dir: &Path, dir: &Path, index: &mut HashMap<Arc<str>, Arc<Path>>) {
-            let Ok(entries) = fs::read_dir(dir) else {
-                return;
-            };
+    let total_width = left_width + right_width + PADDING_BETWEEN_CARDS * 3;
+    let max_card_height = left_card.size.height.max(right_card.size.height);
+    let total_height = max_card_height + PADDING_BETWEEN_CARDS * 2;
 
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    find_card(base_dir, &path, index);
-                    continue;
-                }
+    // make sure buffer big enough for image (width * height * 4 bytes per pixel)
+    let required_len = (total_width * total_height * 4) as usize;
 
-                let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
-                    continue;
-                };
+    let mut buffer = DROP_POOL.lock().unwrap_or_else(|e| e.into_inner()).pop().unwrap_or_default();
+    buffer.clear();
+    buffer.resize(required_len, 0);
 
-                if ext.eq_ignore_ascii_case("webp") {
-                    if let Ok(rel_path) = path.strip_prefix(base_dir) {
-                        let key_path = rel_path.with_extension("");
-                        let name_str = key_path.to_string_lossy().replace('\\', "/");
-                        index.insert(name_str.into(), path.into());
-                    }
-                } else if matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg") {
-                    tracing::warn!("ignored '{}' (only webp supported)", path.display());
-                }
-            }
-        }
+    // count starting position for the left and right card.
+    let left_card_x = PADDING_BETWEEN_CARDS;
+    let right_card_x = left_width + PADDING_BETWEEN_CARDS * 2;
+    let card_y = PADDING_BETWEEN_CARDS;
 
-        let mut index = HashMap::default();
-        find_card(cards_dir, cards_dir, &mut index);
-        index
-    }
+    // copy pixels from left and right card into buffer.
+    copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
+    copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
 
-    // bake the entire cache up to the memory limit
-    pub fn start_prewarm(&self) {
-        if self.file_index.is_empty() {
-            return;
-        }
+    let mut left_itoa = Buffer::new();
+    let left_print_str = left_itoa.format(left_card_print);
 
-        let file_index_clone = self.file_index.clone();
-        let memory = self.memory.clone();
+    let mut left_print_buf = [0u8; 32];
+    left_print_buf[0] = b'#';
+    let left_print_len = 1 + left_print_str.len();
+    left_print_buf[1..left_print_len].copy_from_slice(left_print_str.as_bytes());
+    let left_print = &left_print_buf[..left_print_len];
 
-        spawn(async move {
-            tracing::info!("baking memory cache (dashmap/ahash)..");
-            let warmed = Arc::new(AtomicUsize::new(0));
-            let warmed_kb = Arc::new(AtomicU64::new(0));
-            let warmed_disk_bytes = Arc::new(AtomicU64::new(0));
-            let cores = thread::available_parallelism().map_or(8, NonZero::get);
-            let concurrent_tasks = cores * 2;
-            let mut join_set = JoinSet::new();
+    let mut right_itoa = Buffer::new();
+    let right_print_str = right_itoa.format(right_card_print);
 
-            for (name, path) in file_index_clone.iter() {
-                // check if we reached 90% cap before spawning more work
-                let current_kb = warmed_kb.load(Ordering::Relaxed);
-                if current_kb > ((MAX_CACHE_SIZE_KB as u64) * 9 / 10) {
-                    tracing::info!("stopped baking (reached memory cap)");
-                    break;
-                }
+    let mut right_print_buf = [0u8; 32];
+    right_print_buf[0] = b'#';
+    let right_print_len = 1 + right_print_str.len();
+    right_print_buf[1..right_print_len].copy_from_slice(right_print_str.as_bytes());
+    let right_print = &right_print_buf[..right_print_len];
 
-                if join_set.len() >= concurrent_tasks {
-                    join_set.join_next().await;
-                }
+    let canvas_time = start_canvas.elapsed();
+    let start_print = Instant::now();
 
-                let name = name.clone();
-                let path = path.clone();
-                let memory = memory.clone();
-                let warmed = warmed.clone();
-                let warmed_kb = warmed_kb.clone();
-                let warmed_disk_bytes = warmed_disk_bytes.clone();
+    // count positions for text and draw it to the image
+    let left_print_width = measure_print_number(left_print);
+    let right_print_width = measure_print_number(right_print);
 
-                join_set.spawn(async move {
-                    let Ok(file_bytes) = tokio_fs::read(&path).await else {
-                        return;
-                    };
+    let ref_width = measure_print_number(b"#00");
+    let right_padding = TEXT_PADDING_FROM_EDGE - ref_width;
 
-                    // check if its webp or not.
-                    if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
-                        tracing::warn!("skipped '{}' (only webp supported)", path.display());
-                        return;
-                    }
+    let left_print_x = (left_card_x + left_width).cast_signed() - right_padding - left_print_width;
+    let right_print_x =
+        (right_card_x + right_width).cast_signed() - right_padding - right_print_width;
+    let print_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-                    let file_len = file_bytes.len() as u64;
+    draw_print_number(
+        total_width,
+        total_height,
+        &mut buffer[..required_len],
+        left_print,
+        Point::new(left_print_x, print_y),
+    )?;
+    draw_print_number(
+        total_width,
+        total_height,
+        &mut buffer[..required_len],
+        right_print,
+        Point::new(right_print_x, print_y),
+    )?;
 
-                    let result = task::spawn_blocking(move || {
-                        let decode_res =
-                            Decoder::new(&file_bytes).and_then(Decoder::decode_rgba_raw);
+    let print_time = start_print.elapsed();
+    let start_encode = Instant::now();
 
-                        decode_res.ok().map(|(pixels, width, height)| {
-                            Arc::new(RawCardImage {
-                                size: Size::new(width, height),
-                                pixels: pixels.into_boxed_slice(),
-                            })
-                        })
-                    })
-                    .await
-                    .unwrap_or(None);
+    // encode final drop image to webp
+    let result = encode_webp(total_width, total_height, &buffer[..required_len]);
+    let encode_time = start_encode.elapsed();
 
-                    if let Some(arc_img) = result {
-                        let size_kb = arc_img.pixels.len() / 1024;
-                        memory.insert(name, arc_img);
-                        warmed.fetch_add(1, Ordering::Relaxed);
-                        warmed_kb.fetch_add(size_kb as u64, Ordering::Relaxed);
-                        warmed_disk_bytes.fetch_add(file_len, Ordering::Relaxed);
-                    }
-                });
-            }
+    tracing::debug!(
+        "spent: paste={:.2}ms, font={:.2}ms, [encode={:.3}ms]",
+        canvas_time.as_secs_f64() * 1000.0,
+        print_time.as_secs_f64() * 1000.0,
+        encode_time.as_secs_f64() * 1000.0
+    );
 
-            while join_set.join_next().await.is_some() {}
+    DROP_POOL.lock().unwrap_or_else(|e| e.into_inner()).push(buffer);
 
-            let total_disk_bytes = warmed_disk_bytes.load(Ordering::Relaxed);
-
-            let mb = total_disk_bytes as f64 / 1_048_576.0;
-
-            tracing::info!(
-                "finished baking {} cards [{:.2} mb]",
-                warmed.load(Ordering::Relaxed),
-                mb
-            );
-        });
-    }
-
-    // gets decoded card image from cache memory map.
-    // miss baca dari disk langsung (juga ga dimasukin ke mem map, liat line 4)
-    pub async fn get(&self, name: &str) -> Result<Arc<RawCardImage>, RenderError> {
-        if let Some(img) = self.memory.get(name) {
-            tracing::trace!("cache hit for {}", name);
-            return Ok(img.value().clone());
-        }
-
-        tracing::trace!("cache miss for {}", name);
-
-        let path = self
-            .file_index
-            .get(name)
-            .cloned()
-            .ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
-
-        let file_bytes = tokio_fs::read(&path).await.map_err(|e| {
-            RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
-        })?;
-
-        if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
-            tracing::warn!("rejected '{}' (only webp supported)", path.display());
-            return Err(RenderError::Internal(format!("'{}' is not a webp", path.display())));
-        }
-
-        let arc_img = task::spawn_blocking(move || {
-            let (pixels, width, height) = Decoder::new(&file_bytes)
-                .map_err(|e| {
-                    RenderError::Internal(format!(
-                        "failed to start decoder for '{}': {e:?}",
-                        path.display()
-                    ))
-                })?
-                .decode_rgba_raw()
-                .map_err(|e| {
-                    RenderError::Internal(format!(
-                        "failed to decode webp for '{}': {e:?}",
-                        path.display()
-                    ))
-                })?;
-
-            let image =
-                RawCardImage { size: Size::new(width, height), pixels: pixels.into_boxed_slice() };
-            Ok(Arc::new(image))
-        })
-        .await
-        .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))??;
-
-        Ok(arc_img)
-    }
+    result
 }
