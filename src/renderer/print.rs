@@ -118,7 +118,9 @@ pub fn draw_print_number(
                 })?;
 
             for (pixel, &coverage) in target_pixels.chunks_exact_mut(4).zip(letter_row) {
-                let Ok(pixel): Result<&mut [u8; 4], _> = pixel.try_into() else { continue; };
+                let Ok(pixel): Result<&mut [u8; 4], _> = pixel.try_into() else {
+                    continue;
+                };
                 if coverage == 255 {
                     *pixel = [255, 255, 255, 255];
                 } else if coverage > 0 {
