@@ -1,11 +1,11 @@
 use bytes::Bytes;
 use webpx::{AlphaFilter, EncoderConfig, ImageHint, Preset, Unstoppable};
 
-use crate::renderer::error::Result;
+use crate::renderer::error::{RenderError, Result};
 
-const WEBP_QUALITY: f32 = 85.0;
+const WEBP_QUALITY: f32 = 100.0;
 const WEBP_SPEED: u8 = 0;
-const WEBP_ALPHA_QUALITY: u8 = 85;
+const WEBP_ALPHA_QUALITY: u8 = 100;
 const WEBP_THREAD_LEVEL: u8 = 0;
 const WEBP_SEGMENTS: u8 = 1;
 
