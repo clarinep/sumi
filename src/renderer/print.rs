@@ -56,7 +56,7 @@ pub fn init_font() {
 // canvas_col_idx is non negative because draw_x_start offsets any negative horizontal position
 // letter_row_idx and letter_col_idx are positive offsets bounded by zero
 // count is positive since line 94 check draw_x_end > draw_x_start
-#[allow(clippy::many_single_char_names, clippy::cast_sign_loss)]
+#[allow(clippy::many_single_char_names, clippy::cast_sign_loss, clippy::similar_names)]
 pub fn draw_print_number(
     canvas_width: u32,
     canvas_height: u32,
