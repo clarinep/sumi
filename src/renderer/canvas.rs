@@ -51,7 +51,7 @@ impl Drop for BufferGuard {
     #[inline]
     fn drop(&mut self) {
         let buf = std::mem::take(&mut self.buffer);
-        DROP_POOL.lock().unwrap_or_else(|e| e.into_inner()).push(buf);
+        DROP_POOL.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(buf);
     }
 }
 
@@ -92,7 +92,14 @@ pub fn create_drop_image(
     // make sure buffer big enough for image (width * height * 4 bytes per pixel)
     let required_len = (total_width * total_height * 4) as usize;
 
-    let mut buffer = BufferGuard::new(DROP_POOL.lock().unwrap_or_else(|e| e.into_inner()).pop().unwrap_or_default(), required_len);
+    let mut buffer = BufferGuard::new(
+        DROP_POOL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pop()
+            .unwrap_or_default(),
+        required_len,
+    );
 
     // count starting position for the left and right card.
     let left_card_x = PADDING_BETWEEN_CARDS;

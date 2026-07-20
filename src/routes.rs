@@ -1,7 +1,4 @@
-use std::{
-    sync::Arc,
-    time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 
 use axum::{
     Json,
@@ -12,7 +9,10 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{error::{Error, Result}, renderer::CardRenderer};
+use crate::{
+    error::{Error, Result},
+    renderer::CardRenderer,
+};
 
 // the data we expect when blair asks for an image.
 // we need character name from its filename and also print nums

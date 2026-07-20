@@ -122,8 +122,12 @@ pub fn draw_print_number(
                     RenderError::Internal("letter coverage range out of bounds".to_string())
                 })?;
 
-            for (pixel, coverage) in target_pixels.chunks_exact_mut(4).zip(letter_row.iter().copied()) {
-                let Ok(pixel): Result<&mut [u8; 4], _> = pixel.try_into() else { continue; };
+            for (pixel, coverage) in
+                target_pixels.chunks_exact_mut(4).zip(letter_row.iter().copied())
+            {
+                let Ok(pixel): Result<&mut [u8; 4], _> = pixel.try_into() else {
+                    continue;
+                };
                 if coverage == 255 {
                     *pixel = [255, 255, 255, 255];
                 } else if coverage > 0 {
@@ -158,9 +162,14 @@ pub fn draw_print_number(
 // measures how many padding needed for our print numbers
 #[inline]
 pub fn measure_print_number(print_number: &[u8]) -> i32 {
-    print_number.iter().copied().filter_map(|b| match b {
-        b'#' => Some(&LETTERS.hash),
-        b'0'..=b'9' => Some(&LETTERS.digits[(b - b'0') as usize]),
-        _ => None,
-    }).map(|letter| i32::from(letter.advance_width)).sum()
+    print_number
+        .iter()
+        .copied()
+        .filter_map(|b| match b {
+            b'#' => Some(&LETTERS.hash),
+            b'0'..=b'9' => Some(&LETTERS.digits[(b - b'0') as usize]),
+            _ => None,
+        })
+        .map(|letter| i32::from(letter.advance_width))
+        .sum()
 }

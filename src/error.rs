@@ -1,10 +1,11 @@
+use std::fmt::{Display, Formatter, Result as FmtResult};
+
 use axum::{
     Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde_json::json;
-use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::renderer::error::RenderError;
 
@@ -18,7 +19,7 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Render { err, left, right } => {
-                write!(f, "render error (left: {}, right: {}): {}", left, right, err)
+                write!(f, "render error (left: {left}, right: {right}): {err}")
             }
         }
     }
