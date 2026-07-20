@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, atomic::Ordering},
+    sync::Arc,
     time::Instant,
 };
 
