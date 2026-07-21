@@ -8,6 +8,7 @@ use super::{
     error::Result,
     pixels::{Point, RawCardImage},
     print::{draw_print_number, measure_print_number},
+    PrintNumber,
 };
 
 const TEXT_SIZE: f32 = 60.0;
@@ -75,11 +76,11 @@ impl std::ops::DerefMut for BufferGuard {
 // combine two card images and add print numbers = drop image
 // we manually copy pixel rows from the card images. this is much faster
 // than creating a new blank image and using a library to paste the card images to it.
-pub fn create_drop_image(
+pub(super) fn create_drop_image(
     left_card: &RawCardImage,
     right_card: &RawCardImage,
-    left_card_print: u32,
-    right_card_print: u32,
+    left_card_print: PrintNumber,
+    right_card_print: PrintNumber,
 ) -> Result<Bytes> {
     let start_canvas = Instant::now();
 
@@ -112,23 +113,21 @@ pub fn create_drop_image(
     copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
     copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
 
-    let mut left_itoa = Buffer::new();
-    let left_print_str = left_itoa.format(left_card_print);
+    #[inline]
+    fn format_print_number(print_num: u32, buf: &mut [u8; 32]) -> &[u8] {
+        buf[0] = b'#';
+        let mut itoa = Buffer::new();
+        let s = itoa.format(print_num);
+        let len = 1 + s.len();
+        buf[1..len].copy_from_slice(s.as_bytes());
+        &buf[..len]
+    }
 
     let mut left_print_buf = [0u8; 32];
-    left_print_buf[0] = b'#';
-    let left_print_len = 1 + left_print_str.len();
-    left_print_buf[1..left_print_len].copy_from_slice(left_print_str.as_bytes());
-    let left_print = &left_print_buf[..left_print_len];
-
-    let mut right_itoa = Buffer::new();
-    let right_print_str = right_itoa.format(right_card_print);
+    let left_print = format_print_number(left_card_print.0, &mut left_print_buf);
 
     let mut right_print_buf = [0u8; 32];
-    right_print_buf[0] = b'#';
-    let right_print_len = 1 + right_print_str.len();
-    right_print_buf[1..right_print_len].copy_from_slice(right_print_str.as_bytes());
-    let right_print = &right_print_buf[..right_print_len];
+    let right_print = format_print_number(right_card_print.0, &mut right_print_buf);
 
     let canvas_time = start_canvas.elapsed();
     let start_print = Instant::now();
