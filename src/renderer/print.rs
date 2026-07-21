@@ -125,6 +125,147 @@ pub fn draw_print_number(
             for (pixel, coverage) in
                 target_pixels.chunks_exact_mut(4).zip(letter_row.iter().copied())
             {
+                // chunks_exact_mut(4) guarantees each chunk has exactly 4 elements
+                let pixel: &mut [u8; 4] = pixel.try_into().unwrap();
+                if coverage == 255 {
+                    *pixel = [255, 255, 255, 255];
+                } else if coverage > 0 {
+                    let fg_a = u32::from(coverage);
+                    let inv_fg_a = 255 - fg_a;
+                    let bg_a = u32::from(pixel[3]);
+
+                    let out_a_times_255 = fg_a * 255 + bg_a * inv_fg_a;
+                    let out_a = out_a_times_255 / 255;
+
+                    if out_a == 0 {
+                        continue;
+                    }
+
+                    let r = u32::from(pixel[0]);
+                    let g = u32::from(pixel[1]);
+                    let b = u32::from(pixel[2]);
+
+                    let fg_term = 65025 * fg_a;
+                    let bg_term = bg_a * inv_fg_a;
+
+                    pixel[0] = ((fg_term + r * bg_term) / out_a_times_255) as u8;
+                    pixel[1] = ((fg_term + g * bg_term) / out_a_times_255) as u8;
+                    pixel[2] = ((fg_term + b * bg_term) / out_a_times_255) as u8;
+                    pixel[3] = out_a as u8;
+                }
+            }
+        }
+
+        pos.x += i32::from(letter.advance_width);
+    }
+    Ok(())
+}
+
+// measures how many padding needed for our print numbers
+#[inline]
+pub fn measure_print_number(print_number: &[u8]) -> i32 {
+    print_number
+        .iter()
+        .copied()
+        .filter_map(|b| match b {
+            b'#' => Some(&LETTERS.hash),
+            b'0'..=b'9' => Some(&LETTERS.digits[(b - b'0') as usize]),
+            _ => None,
+        })
+        .map(|letter| i32::from(letter.advance_width))
+        .sum()
+}
+            advance_width: metrics.advance_width.round() as i16,
+            offset_x: metrics.xmin as i16,
+            offset_y: (ascent - metrics.ymin as f32 - metrics.height as f32).round() as i16,
+        }
+    };
+
+    LetterSet {
+        hash: render_char('#'),
+        digits: array::from_fn(|i| render_char((b'0' + i as u8) as char)),
+    }
+});
+
+pub fn init_font() {
+    LazyLock::force(&LETTERS);
+}
+
+// !!! all as usize casts are safe from sign loss !!!
+// canvas_w and letter_w come from unsigned integers
+// canvas_row_idx is verified positive by the bounds check on line 87
+// canvas_col_idx is non negative because draw_x_start offsets any negative horizontal position
+// letter_row_idx and letter_col_idx are positive offsets bounded by zero
+// count is positive since line 94 check draw_x_end > draw_x_start
+#[allow(clippy::many_single_char_names, clippy::cast_sign_loss, clippy::similar_names)]
+pub fn draw_print_number(
+    canvas_width: u32,
+    canvas_height: u32,
+    canvas_buf: &mut [u8],
+    print_number: &[u8],
+    mut pos: Point<i32>,
+) -> Result<(), RenderError> {
+    let canvas_width = canvas_width.cast_signed();
+    let canvas_height = canvas_height.cast_signed();
+    let canvas_w = canvas_width as usize;
+
+    for &b in print_number {
+        let letter = match b {
+            b'#' => &LETTERS.hash,
+            b'0'..=b'9' => &LETTERS.digits[(b - b'0') as usize],
+            _ => continue,
+        };
+
+        let letter_width = i32::from(letter.width);
+        let letter_height = i32::from(letter.height);
+        let letter_w = letter_width as usize;
+
+        let draw_y = pos.y + i32::from(letter.offset_y);
+
+        let draw_y_start = 0.max(-draw_y);
+        let draw_y_end = letter_height.min(canvas_height - draw_y);
+
+        if draw_y_start >= draw_y_end {
+            pos.x += i32::from(letter.advance_width);
+            continue; // offscreen vertically
+        }
+
+        let draw_x_start = 0.max(-(pos.x + i32::from(letter.offset_x)));
+        let draw_x_end = letter_width.min(canvas_width - (pos.x + i32::from(letter.offset_x)));
+
+        if draw_x_start >= draw_x_end {
+            pos.x += i32::from(letter.advance_width);
+            continue; // offscreen horizontally
+        }
+
+        for draw_y_offset in draw_y_start..draw_y_end {
+            let canvas_y = draw_y + draw_y_offset;
+
+            let canvas_row_idx = canvas_y as usize;
+            let canvas_col_idx = (pos.x + i32::from(letter.offset_x) + draw_x_start) as usize;
+            let canvas_pixel_start = (canvas_row_idx * canvas_w + canvas_col_idx) * 4;
+
+            let letter_row_idx = draw_y_offset as usize;
+            let letter_col_idx = draw_x_start as usize;
+            let letter_pixel_start = letter_row_idx * letter_w + letter_col_idx;
+
+            let count = (draw_x_end - draw_x_start) as usize;
+
+            let canvas_pixel_end = canvas_pixel_start + count * 4;
+            let letter_pixel_end = letter_pixel_start + count;
+
+            let target_pixels =
+                canvas_buf.get_mut(canvas_pixel_start..canvas_pixel_end).ok_or_else(|| {
+                    RenderError::Internal("canvas pixel range out of bounds".to_string())
+                })?;
+            let letter_row =
+                letter.coverage.get(letter_pixel_start..letter_pixel_end).ok_or_else(|| {
+                    RenderError::Internal("letter coverage range out of bounds".to_string())
+                })?;
+
+            for (pixel, coverage) in
+                target_pixels.chunks_exact_mut(4).zip(letter_row.iter().copied())
+            {
                 let Ok(pixel): Result<&mut [u8; 4], _> = pixel.try_into() else {
                     continue;
                 };
