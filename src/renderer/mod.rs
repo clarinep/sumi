@@ -1,9 +1,13 @@
-pub mod cache;
-pub mod canvas;
-pub mod encoder;
-pub mod error;
-pub mod pixels;
-pub mod print;
+mod cache;
+mod canvas;
+mod encoder;
+mod error;
+mod pixels;
+mod print;
+
+pub(crate) use cache::CardCache;
+pub(crate) use error::{RenderError, Result};
+pub(crate) use print::init_font;
 
 use std::{
     num::NonZero,
@@ -14,10 +18,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use cache::CardCache;
 use canvas::create_drop_image;
-use error::{RenderError, Result};
-use print::init_font;
 use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 use crate::metrics::Metrics;
@@ -25,16 +26,16 @@ use crate::metrics::Metrics;
 const TIMEOUT_SECONDS: u64 = 10;
 
 #[derive(Debug)]
-pub struct CardRenderer {
-    pub card_cache: CardCache,
-    pub start_time: Instant,
-    pub stats: Metrics,
+pub(crate) struct CardRenderer {
+    pub(crate) card_cache: CardCache,
+    pub(crate) start_time: Instant,
+    pub(crate) stats: Metrics,
     cpu_semaphore: Arc<Semaphore>,
     total_permits: usize,
 }
 
 impl CardRenderer {
-    pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self> {
+    pub(crate) fn new(cards_directory: impl AsRef<Path>) -> Result<Self> {
         let cores = thread::available_parallelism().map_or(4, NonZero::get);
         tracing::info!("sumi woke up with [{cores} cpu cores]");
         init_font();
@@ -49,7 +50,7 @@ impl CardRenderer {
     }
 
     // wait for all background workers to finish
-    pub async fn wait_for_tasks_to_finish(&self) {
+    pub(crate) async fn wait_for_tasks_to_finish(&self) {
         let active_tasks =
             self.total_permits.saturating_sub(self.cpu_semaphore.available_permits());
         if active_tasks > 0 {
@@ -63,7 +64,7 @@ impl CardRenderer {
     // if an image cant render your drop in 5 seconds, Too bad!
     // in blair-go side your cooldown wont get used. users can just try dropping again.
     #[tracing::instrument(skip(self), err)]
-    pub async fn render_drop(
+    pub(crate) async fn render_drop(
         &self,
         left_card_name: &str,
         right_card_name: &str,
