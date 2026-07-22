@@ -31,6 +31,16 @@ fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, po
     }
 }
 
+#[inline]
+fn format_print_number(print_num: u32, buf: &mut [u8; 32]) -> &[u8] {
+    buf[0] = b'#';
+    let mut itoa = Buffer::new();
+    let s = itoa.format(print_num);
+    let len = 1 + s.len();
+    buf[1..len].copy_from_slice(s.as_bytes());
+    &buf[..len]
+}
+
 static DROP_POOL: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
 const MAX_POOL_BUFFERS: usize = 16;
 
@@ -112,16 +122,6 @@ pub(super) fn create_drop_image(
     // copy pixels from left and right card into buffer.
     copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
     copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
-
-    #[inline]
-    fn format_print_number(print_num: u32, buf: &mut [u8; 32]) -> &[u8] {
-        buf[0] = b'#';
-        let mut itoa = Buffer::new();
-        let s = itoa.format(print_num);
-        let len = 1 + s.len();
-        buf[1..len].copy_from_slice(s.as_bytes());
-        &buf[..len]
-    }
 
     let mut left_print_buf = [0u8; 32];
     let left_print = format_print_number(left_card_print.0, &mut left_print_buf);
