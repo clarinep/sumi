@@ -55,11 +55,11 @@ mod tests {
     #[test]
     fn test_record_success_updates_metrics() {
         let metrics = Metrics::default();
-        
+
         assert_eq!(metrics.successful_renders(), 0);
-        
+
         metrics.record_success(ImageBytes(1024), RenderDurationMs(150));
-        
+
         assert_eq!(metrics.successful_renders(), 1);
         assert_eq!(metrics.total_image_bytes(), 1024);
         assert_eq!(metrics.total_render_time_ms(), 150);
@@ -68,11 +68,11 @@ mod tests {
     #[test]
     fn test_record_failure_updates_failures() {
         let metrics = Metrics::default();
-        
+
         assert_eq!(metrics.failed_renders(), 0);
-        
+
         metrics.record_failure();
-        
+
         assert_eq!(metrics.failed_renders(), 1);
         assert_eq!(metrics.successful_renders(), 0);
     }

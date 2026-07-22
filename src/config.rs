@@ -21,12 +21,17 @@ impl Config {
 
         let port = match env::var("PORT") {
             Ok(s) => s.parse().unwrap_or_else(|_| {
-                tracing::error!("failed to load config..\n      reason: PORT is not a valid u16 port number");
+                tracing::error!(
+                    "failed to load config..\n      reason: PORT is not a valid u16 port number"
+                );
                 std::process::exit(1);
             }),
             Err(env::VarError::NotPresent) => 8888,
             Err(e) => {
-                tracing::error!("failed to load config..\n      reason: failed to read PORT env ({})", e);
+                tracing::error!(
+                    "failed to load config..\n      reason: failed to read PORT env ({})",
+                    e
+                );
                 std::process::exit(1);
             }
         };
@@ -61,19 +66,13 @@ mod tests {
         fn set(key: &str, value: &str) -> Self {
             let original = std::env::var(key).ok();
             unsafe { std::env::set_var(key, value) };
-            EnvGuard {
-                key: key.to_string(),
-                original,
-            }
+            EnvGuard { key: key.to_string(), original }
         }
-        
+
         fn remove(key: &str) -> Self {
             let original = std::env::var(key).ok();
             unsafe { std::env::remove_var(key) };
-            EnvGuard {
-                key: key.to_string(),
-                original,
-            }
+            EnvGuard { key: key.to_string(), original }
         }
     }
 

@@ -13,7 +13,7 @@ fn create_dummy_webp(dir: &Path, name: &str) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
     }
-    
+
     // A tiny valid 1x1 WebP image base64 decoded
     let webp_data: &[u8] = &[
         0x52, 0x49, 0x46, 0x46, 0x1A, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38,

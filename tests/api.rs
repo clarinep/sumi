@@ -2,8 +2,7 @@ mod common;
 
 use std::sync::Arc;
 
-use axum::extract::State;
-use axum::response::IntoResponse;
+use axum::{extract::State, response::IntoResponse};
 use serde_json::Value;
 use sumi::{renderer::CardRenderer, routes::handle_metrics};
 use tempfile::TempDir;
