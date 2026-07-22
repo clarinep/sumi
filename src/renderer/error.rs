@@ -5,7 +5,7 @@ use std::{
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub enum RenderError {
+pub(crate) enum RenderError {
     CardNotFound(String),
     Timeout,
     Internal(String),
@@ -27,4 +27,4 @@ impl Display for RenderError {
 
 impl Error for RenderError {}
 
-pub type Result<T> = std::result::Result<T, RenderError>;
+pub(crate) type Result<T> = std::result::Result<T, RenderError>;
