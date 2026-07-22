@@ -4,11 +4,11 @@ use bytes::Bytes;
 use itoa::Buffer;
 
 use super::{
+    PrintNumber,
     encoder::encode_webp,
     error::Result,
     pixels::{Point, RawCardImage},
     print::{draw_print_number, measure_print_number},
-    PrintNumber,
 };
 
 const TEXT_SIZE: f32 = 60.0;
