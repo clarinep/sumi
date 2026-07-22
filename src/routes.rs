@@ -18,11 +18,11 @@ use crate::{
 // the data we expect when blair asks for an image.
 // we need character name from its filename and also print nums
 #[derive(Debug, Deserialize)]
-pub(crate) struct RenderRequest {
-    pub(crate) left: String,
-    pub(crate) right: String,
-    pub(crate) left_print: Option<u32>,
-    pub(crate) right_print: Option<u32>,
+pub struct RenderRequest {
+    pub left: String,
+    pub right: String,
+    pub left_print: Option<u32>,
+    pub right_print: Option<u32>,
 }
 
 // this is the main endpoint that handles requests to make our drop image.
@@ -55,7 +55,7 @@ pub async fn handle_render_drop(
 }
 
 // an endpoint for sumi stats and whether sumi died or not
-pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
+pub fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
     let uptime = renderer.start_time.elapsed().as_secs();
 
     let successful = renderer.stats.successful_renders();
