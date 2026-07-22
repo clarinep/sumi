@@ -75,9 +75,6 @@ impl CardRenderer {
     ) -> Result<Bytes> {
         let render_future = async {
             let start = Instant::now();
-
-            // 1. Acquire the execution permit first (bounds the active task count)
-            // if the request times out, the thread still holds the permit until it finishes
             let permit = self
                 .cpu_semaphore
                 .clone()
@@ -85,13 +82,10 @@ impl CardRenderer {
                 .await
                 .map_err(|_| RenderError::Internal("cpu semaphore died".to_string()))?;
 
-            // 2. Cooperative Timeout Verification: abort before spawning blocking work
-            // if we spent more than 5 seconds just waiting in queue.
             if start.elapsed() >= Duration::from_secs(5) {
                 return Err(RenderError::Timeout);
             }
 
-            // 3. Fetch and decode only when we are guaranteed a slot on the CPU
             let start_fetch = Instant::now();
             let (left_card, right_card) = try_join!(
                 self.card_cache.get(left_card_name),
