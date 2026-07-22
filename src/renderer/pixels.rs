@@ -1,27 +1,27 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Point<T> {
-    pub(super) x: T,
-    pub(super) y: T,
+pub struct Point<T> {
+    pub x: T,
+    pub y: T,
 }
 
 impl<T> Point<T> {
     #[inline]
-    pub(super) const fn new(x: T, y: T) -> Self {
+    pub const fn new(x: T, y: T) -> Self {
         Self { x, y }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Size<T> {
-    pub(super) width: T,
-    pub(super) height: T,
+pub struct Size<T> {
+    pub width: T,
+    pub height: T,
 }
 
 impl<T> Size<T> {
     #[inline]
-    pub(super) const fn new(width: T, height: T) -> Self {
+    pub const fn new(width: T, height: T) -> Self {
         Self { width, height }
     }
 }
