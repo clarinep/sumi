@@ -5,9 +5,9 @@ mod error;
 mod pixels;
 mod print;
 
-pub(crate) use cache::CardCache;
-pub(crate) use error::{RenderError, Result};
-pub(crate) use print::init_font;
+pub use cache::CardCache;
+pub use error::{RenderError, Result};
+use print::init_font;
 
 use std::{
     num::NonZero,
@@ -25,17 +25,20 @@ use crate::metrics::Metrics;
 
 const TIMEOUT_SECONDS: u64 = 10;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrintNumber(pub u32);
+
 #[derive(Debug)]
-pub(crate) struct CardRenderer {
-    pub(crate) card_cache: CardCache,
-    pub(crate) start_time: Instant,
-    pub(crate) stats: Metrics,
+pub struct CardRenderer {
+    pub card_cache: CardCache,
+    pub start_time: Instant,
+    pub stats: Metrics,
     cpu_semaphore: Arc<Semaphore>,
     total_permits: usize,
 }
 
 impl CardRenderer {
-    pub(crate) fn new(cards_directory: impl AsRef<Path>) -> Result<Self> {
+    pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self> {
         let cores = thread::available_parallelism().map_or(4, NonZero::get);
         tracing::info!("sumi woke up with [{cores} cpu cores]");
         init_font();
@@ -50,7 +53,7 @@ impl CardRenderer {
     }
 
     // wait for all background workers to finish
-    pub(crate) async fn wait_for_tasks_to_finish(&self) {
+    pub async fn wait_for_tasks_to_finish(&self) {
         let active_tasks =
             self.total_permits.saturating_sub(self.cpu_semaphore.available_permits());
         if active_tasks > 0 {
@@ -64,23 +67,17 @@ impl CardRenderer {
     // if an image cant render your drop in 5 seconds, Too bad!
     // in blair-go side your cooldown wont get used. users can just try dropping again.
     #[tracing::instrument(skip(self), err)]
-    pub(crate) async fn render_drop(
+    pub async fn render_drop(
         &self,
         left_card_name: &str,
         right_card_name: &str,
-        left_print_number: u32,
-        right_print_number: u32,
+        left_print_number: PrintNumber,
+        right_print_number: PrintNumber,
     ) -> Result<Bytes> {
         let render_future = async {
-            let start_fetch = Instant::now();
-            let (left_card, right_card) = try_join!(
-                self.card_cache.get(left_card_name),
-                self.card_cache.get(right_card_name)
-            )?;
-            let fetch_elapsed = start_fetch.elapsed();
-            tracing::debug!("fetching cards took {:.3}ms", fetch_elapsed.as_secs_f64() * 1000.0);
+            let start = Instant::now();
 
-            // need to acquire an owned permit so we can move it inside the blocking thread.
+            // 1. Acquire the execution permit first (bounds the active task count)
             // if the request times out, the thread still holds the permit until it finishes
             let permit = self
                 .cpu_semaphore
@@ -88,6 +85,21 @@ impl CardRenderer {
                 .acquire_owned()
                 .await
                 .map_err(|_| RenderError::Internal("cpu semaphore died".to_string()))?;
+
+            // 2. Cooperative Timeout Verification: abort before spawning blocking work
+            // if we spent more than 5 seconds just waiting in queue.
+            if start.elapsed() >= Duration::from_secs(5) {
+                return Err(RenderError::Timeout);
+            }
+
+            // 3. Fetch and decode only when we are guaranteed a slot on the CPU
+            let start_fetch = Instant::now();
+            let (left_card, right_card) = try_join!(
+                self.card_cache.get(left_card_name),
+                self.card_cache.get(right_card_name)
+            )?;
+            let fetch_elapsed = start_fetch.elapsed();
+            tracing::debug!("fetching cards took {:.3}ms", fetch_elapsed.as_secs_f64() * 1000.0);
 
             // move the heavy image work to a background thread
             let result = task::spawn_blocking(move || {
