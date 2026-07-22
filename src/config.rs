@@ -22,7 +22,7 @@ impl Config {
         let port = match env::var("PORT") {
             Ok(s) => s.parse().expect("must be a valid port number"),
             Err(env::VarError::NotPresent) => 8888,
-            Err(e) => panic!("failed to read port env: {e}"),
+            Err(e) => panic!("sumi failed to read port env\n      reason: {e}"),
         };
 
         tracing::info!(
