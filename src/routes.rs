@@ -55,7 +55,7 @@ pub async fn handle_render_drop(
 }
 
 // an endpoint for sumi stats and whether sumi died or not
-pub fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
+pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
     let uptime = renderer.start_time.elapsed().as_secs();
 
     let successful = renderer.stats.successful_renders();
