@@ -1,27 +1,27 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Point<T> {
-    pub x: T,
-    pub y: T,
+pub(super) struct Point<T> {
+    pub(super) x: T,
+    pub(super) y: T,
 }
 
 impl<T> Point<T> {
     #[inline]
-    pub const fn new(x: T, y: T) -> Self {
+    pub(super) const fn new(x: T, y: T) -> Self {
         Self { x, y }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Size<T> {
-    pub width: T,
-    pub height: T,
+pub(super) struct Size<T> {
+    pub(super) width: T,
+    pub(super) height: T,
 }
 
 impl<T> Size<T> {
     #[inline]
-    pub const fn new(width: T, height: T) -> Self {
+    pub(super) const fn new(width: T, height: T) -> Self {
         Self { width, height }
     }
 }
@@ -29,9 +29,9 @@ impl<T> Size<T> {
 // pixels uncompressed rgba image
 // this will act as a container that will replace our previous image::RgbaImage
 #[derive(Clone, PartialEq, Eq)]
-pub struct RawCardImage {
-    pub size: Size<u32>,
-    pub pixels: Box<[u8]>,
+pub(super) struct RawCardImage {
+    pub(super) size: Size<u32>,
+    pub(super) pixels: Box<[u8]>,
 }
 
 impl Debug for RawCardImage {
