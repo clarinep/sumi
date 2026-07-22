@@ -49,15 +49,13 @@ pub async fn handle_render_drop(
     let elapsed = start.elapsed();
     let bytes_sent = image_data.len();
 
-    renderer.stats.record_success(
-        ImageBytes(bytes_sent as u64),
-        RenderDurationMs(elapsed.as_millis() as u64),
-    );
+    renderer.stats.record_success(ImageBytes(bytes_sent as u64), RenderDurationMs(elapsed.as_millis() as u64));
 
     Ok((StatusCode::OK, [(header::CONTENT_TYPE, "image/webp")], image_data).into_response())
 }
 
 // an endpoint for sumi stats and whether sumi died or not
+#[allow(clippy::unused_async)]
 pub async fn handle_metrics(State(renderer): State<Arc<CardRenderer>>) -> impl IntoResponse {
     let uptime = renderer.start_time.elapsed().as_secs();
 
