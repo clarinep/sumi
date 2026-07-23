@@ -1,17 +1,18 @@
-use std::{future::pending, net::SocketAddr, panic, sync::Arc, time::Duration};
+use std::{future::pending, panic, sync::Arc, time::Duration};
 
-use axum::{Router, routing::get, serve};
+use axum::{routing::get, Router, serve};
 use mimalloc::MiMalloc;
+#[cfg(unix)]
+use tokio::signal::unix::{signal as unix_signal, SignalKind};
+use tokio::{net::TcpListener, signal, time::timeout};
+use tracing_subscriber::{fmt, EnvFilter};
+
 use sumi::{
     config::Config,
     logger::LogFormatter,
     renderer::CardRenderer,
     routes::{handle_metrics, handle_render_drop},
 };
-#[cfg(unix)]
-use tokio::signal::unix::{SignalKind, signal as unix_signal};
-use tokio::{net::TcpListener, signal, time::timeout};
-use tracing_subscriber::{EnvFilter, fmt};
 
 // aegis sets up a panic hook so we can format sys errors cleanly
 // as unexpected panics will give long unformatted backtraces.
@@ -64,7 +65,10 @@ async fn main() {
         println!("{COLOR_SUMI}{line}{RESET}");
     }
 
-    let cfg = Config::from_env();
+    let cfg = Config::from_env().unwrap_or_else(|e| {
+        tracing::error!("failed to load config..\n      reason: {}", e);
+        std::process::exit(1);
+    });
 
     let renderer = match CardRenderer::new(&cfg.cards_dir) {
         Ok(r) => r,
@@ -83,11 +87,11 @@ async fn main() {
         .route("/render/drop", get(handle_render_drop))
         .with_state(state.clone());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], cfg.port));
-    let listener = match TcpListener::bind(addr).await {
+    let addr_str = format!("{}:{}", cfg.host, cfg.port);
+    let listener = match TcpListener::bind(&addr_str).await {
         Ok(l) => l,
         Err(e) => {
-            tracing::error!("sumi failed to bind to port..\n      reason: {}", e);
+            tracing::error!("sumi failed to bind to {}..\n      reason: {}", addr_str, e);
             std::process::exit(1);
         }
     };
