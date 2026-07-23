@@ -1,5 +1,6 @@
 <div align="center">
-  <img src="assets/IMG_8182.png" alt="Sumi logo" width="200">
+  
+![Sumi logo](assets/IMG_8182.png)
 
   <h2>Image renderer for @Blair!</h2>
 </div>
