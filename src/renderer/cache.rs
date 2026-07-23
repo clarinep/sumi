@@ -87,9 +87,9 @@ impl CardCache {
                         let name_str = key_path.to_string_lossy().replace('\\', "/");
                         index.insert(name_str.into(), path.into());
                     }
-                } else if ext.eq_ignore_ascii_case("png")
-                    || ext.eq_ignore_ascii_case("jpg")
-                    || ext.eq_ignore_ascii_case("jpeg")
+                } else if ext.eq_ignore_ascii_case("png") 
+                    || ext.eq_ignore_ascii_case("jpg") 
+                    || ext.eq_ignore_ascii_case("jpeg") 
                 {
                     tracing::warn!("ignored '{}' (only webp supported)", path.display());
                 }
@@ -150,7 +150,7 @@ impl CardCache {
                         return;
                     }
 
-                    let file_len = file_bytes.len() as u64;
+                    let file_len = u64::from(file_bytes.len());
 
                     let result = task::spawn_blocking(move || {
                         let decode_res =
