@@ -1,0 +1,8 @@
+{
+  "project": {
+    "repository": "https://github.com/blairtcg/sumi"
+  },
+  "build": {
+    "path_prefix": "sumi"
+  }
+}
