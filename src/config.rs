@@ -23,7 +23,7 @@ impl Config {
         let port = match env::var("PORT") {
             Ok(s) => s.parse().map_err(|_| "PORT is not a valid u16 port number".to_string())?,
             Err(env::VarError::NotPresent) => 8888,
-            Err(e) => return Err(format!("failed to read PORT env ({})", e)),
+            Err(e) => return Err(format!("failed to read PORT env ({e})")),
         };
 
         let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
