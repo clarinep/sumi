@@ -1,43 +1,53 @@
-name: Deploy oranda Website
+name: Deploy Oranda Site
 
 on:
-  push:
-    branches:
-      - main # Change if your default branch is different
+  # This ensures the workflow only runs when you manually click "Run workflow"
+  workflow_dispatch: 
 
+# These permissions are required to deploy to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# Ensures you don't accidentally run overlapping deployments
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-and-deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      # Installs cargo-binstall (a lightning-fast way to grab pre-built rust binaries)
+      - name: Setup cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
 
-      - name: Install oranda
-        run: cargo install oranda
+      # Pulls the Oranda binary directly
+      - name: Install Oranda
+        run: cargo binstall oranda -y
 
-      - name: Build site
+      # Builds the site from your README and config (outputs to ./public by default)
+      - name: Build Oranda site
         run: oranda build
 
-      - name: Upload Pages Artifact
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # Grabs the generated files from the /public folder
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'public' # The output folder oranda creates
+          path: './public' 
 
+      # Pushes it live to your xyz.github.io domain
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
