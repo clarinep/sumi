@@ -27,7 +27,8 @@ tempfile = "3.10.1"
   opt-level     = 3
   codegen-units = 1
   panic         = "abort"
-  strip         = "symbols"  
+  strip         = "symbols"
+  overflow-checks = true
 
 [profile.dev]
   debug = false
