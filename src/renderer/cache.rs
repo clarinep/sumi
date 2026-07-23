@@ -87,9 +87,9 @@ impl CardCache {
                         let name_str = key_path.to_string_lossy().replace('\\', "/");
                         index.insert(name_str.into(), path.into());
                     }
-                } else if ext.eq_ignore_ascii_case("png") 
-                    || ext.eq_ignore_ascii_case("jpg") 
-                    || ext.eq_ignore_ascii_case("jpeg") 
+                } else if ext.eq_ignore_ascii_case("png")
+                    || ext.eq_ignore_ascii_case("jpg")
+                    || ext.eq_ignore_ascii_case("jpeg")
                 {
                     tracing::warn!("ignored '{}' (only webp supported)", path.display());
                 }
