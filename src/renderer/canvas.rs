@@ -4,11 +4,11 @@ use bytes::Bytes;
 use itoa::Buffer;
 
 use super::{
-    PrintNumber,
     encoder::encode_webp,
     error::Result,
     pixels::{Point, RawCardImage},
     print::{draw_print_number, measure_print_number},
+    PrintNumber,
 };
 
 const TEXT_SIZE: f32 = 60.0;
@@ -25,9 +25,7 @@ fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, po
     let dest_rows = buffer.chunks_exact_mut(total_row_bytes);
     let src_rows = card.pixels.chunks_exact(card_row_bytes);
 
-    for (dest_row, src_row) in
-        dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize)
-    {
+    for (dest_row, src_row) in dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize) {
         let x_offset = (pos.x * 4) as usize;
         dest_row[x_offset..x_offset + card_row_bytes].copy_from_slice(src_row);
     }
@@ -127,10 +125,10 @@ pub(super) fn create_drop_image(
     copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
 
     let mut left_print_buf = [0u8; 8];
-    let left_print = format_print_number(left_card_print.0, &mut left_print_buf);
+    let left_print = format_print_number(left_card_print.value(), &mut left_print_buf);
 
     let mut right_print_buf = [0u8; 8];
-    let right_print = format_print_number(right_card_print.0, &mut right_print_buf);
+    let right_print = format_print_number(right_card_print.value(), &mut right_print_buf);
 
     let canvas_time = start_canvas.elapsed();
     let start_print = Instant::now();
