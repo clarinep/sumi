@@ -4,11 +4,11 @@ use bytes::Bytes;
 use itoa::Buffer;
 
 use super::{
-    PrintNumber,
     encoder::encode_webp,
     error::Result,
     pixels::{Point, RawCardImage},
     print::{draw_print_number, measure_print_number},
+    PrintNumber,
 };
 
 const TEXT_SIZE: f32 = 60.0;
@@ -21,13 +21,13 @@ fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, po
     let card_row_bytes = (card.size.width * 4) as usize;
     let total_row_bytes = (total_width * 4) as usize;
     assert!(total_row_bytes >= card_row_bytes, "total row must be larger than card row");
-    let start_index = ((pos.y * total_width + pos.x) * 4) as usize;
 
-    let dest_rows = buffer[start_index..].chunks_exact_mut(total_row_bytes);
+    let dest_rows = buffer.chunks_exact_mut(total_row_bytes);
     let src_rows = card.pixels.chunks_exact(card_row_bytes);
 
-    for (dest_row, src_row) in dest_rows.zip(src_rows).take(card.size.height as usize) {
-        dest_row[..card_row_bytes].copy_from_slice(src_row);
+    for (dest_row, src_row) in dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize) {
+        let x_offset = (pos.x * 4) as usize;
+        dest_row[x_offset..x_offset + card_row_bytes].copy_from_slice(src_row);
     }
 }
 
