@@ -74,14 +74,7 @@ pub(super) fn draw_print_number(
     )?;
 
     let white_color = [255u8, 255u8, 255u8, 255u8];
-    draw_glyphs(
-        canvas_width,
-        canvas_height,
-        canvas_buf,
-        print_number,
-        pos,
-        white_color,
-    )?;
+    draw_glyphs(canvas_width, canvas_height, canvas_buf, print_number, pos, white_color)?;
 
     Ok(())
 }

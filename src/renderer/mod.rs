@@ -5,10 +5,6 @@ mod error;
 mod pixels;
 mod print;
 
-pub use cache::CardCache;
-pub use error::{RenderError, Result};
-use print::init_font;
-
 use std::{
     num::NonZero,
     path::Path,
@@ -18,7 +14,10 @@ use std::{
 };
 
 use bytes::Bytes;
+pub use cache::CardCache;
 use canvas::create_drop_image;
+pub use error::{RenderError, Result};
+use print::init_font;
 use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 use crate::metrics::Metrics;

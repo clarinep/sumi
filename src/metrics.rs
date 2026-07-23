@@ -47,4 +47,3 @@ impl Metrics {
         self.total_render_time_ms.load(Ordering::Relaxed)
     }
 }
-
