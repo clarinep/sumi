@@ -5,6 +5,10 @@ mod error;
 mod pixels;
 mod print;
 
+pub use cache::CardCache;
+pub use error::{RenderError, Result};
+use print::init_font;
+
 use std::{
     num::NonZero,
     path::Path,
@@ -14,10 +18,7 @@ use std::{
 };
 
 use bytes::Bytes;
-pub use cache::CardCache;
 use canvas::create_drop_image;
-pub use error::{RenderError, Result};
-use print::init_font;
 use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 use crate::metrics::Metrics;
@@ -25,12 +26,17 @@ use crate::metrics::Metrics;
 const TIMEOUT_SECONDS: u64 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PrintNumber(pub u16);
+pub struct PrintNumber(u16);
 
 impl PrintNumber {
     #[inline]
     pub fn new(val: u32) -> Self {
         Self(val.clamp(1, 999) as u16)
+    }
+
+    #[inline]
+    pub fn value(self) -> u16 {
+        self.0
     }
 }
 
