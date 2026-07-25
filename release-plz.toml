@@ -1,0 +1,7 @@
+[workspace]
+# disables crates.io publishing, we just want github releases
+publish = false
+# disables api semver checks since it is an app, keeping ci fast
+semver_check = false
+# optionally keeps your lockfile fresh
+dependencies_update = true
