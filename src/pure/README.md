@@ -1,5 +1,6 @@
 ## - this is the pure rust implementation of sumi.
 
+
 here the webp encoder is fully written in rust instead of depending on a wrapper to libwebp's C code 
 
 the recommended use case is when we unlock SIMD computing though for now this remains useless for blair's hardware, according to their own tests and benches (possibly vibe coded) they claim it will be similar speed and if not slightly faster than libwebp which is very debatable considering its google's.
