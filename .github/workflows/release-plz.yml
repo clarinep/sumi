@@ -1,32 +1,12 @@
 name: release-plz
 
 on:
-  push:
-    branches:
-      - main
+  # this magic word means it only runs when you click the button
+  workflow_dispatch:
 
 jobs:
-  release:
-    name: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - uses: dtolnay/rust-toolchain@stable
-      
-      - name: create github release
-        uses: release-plz/action@v0.5
-        with:
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  release-pr:
-    name: release pr
+  release-automation:
+    name: release automation
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -38,7 +18,16 @@ jobs:
       
       - uses: dtolnay/rust-toolchain@stable
       
-      - name: update release pr
+      # 1. checks if you merged the pr. if yes, makes the release page.
+      - name: create github release
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. checks for new commits. if yes, drafts the next pr.
+      - name: create or update release pr
         uses: release-plz/action@v0.5
         with:
           command: release-pr
