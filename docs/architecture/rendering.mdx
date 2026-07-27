@@ -1,0 +1,112 @@
+# Rendering pipeline
+
+This page details image composition, buffer pooling, font rasterization, and WebP encoding steps executed during card drop rendering.
+
+## Canvas geometry and layout
+
+A drop image combines two cards side by side inside a single canvas.
+
+```text
++-----------------------------------------------------------------------+
+|  Padding (20px)                                                       |
+|  +-----------------------+  Padding (20px)  +-----------------------+ |
+|  |                       |                  |                       | |
+|  |  Left Card            |                  |  Right Card           | |
+|  |  725 x 1040 px        |                  |  725 x 1040 px        | |
+|  |                       |                  |                       | |
+|  |                       |                  |                       | |
+|  |          #42 (Print)  |                  |         #102 (Print)  | |
+|  +-----------------------+                  +-----------------------+ |
+|  Padding (20px)                                                       |
++-----------------------------------------------------------------------+
+```
+
+### Layout dimensions
+
+* **Standard card size:** 725 pixels wide by 1040 pixels high.
+* **Canvas padding:** 20 pixels (`PADDING_BETWEEN_CARDS`).
+* **Total canvas width:** 1510 pixels.
+* **Total canvas height:** 1080 pixels.
+* **Pixel buffer size:** 6,523,200 bytes (RGBA format).
+
+## Buffer pooling
+
+Allocating a 6.5 MB buffer on every request causes heap fragmentation and garbage collection overhead. Sumi prevents this using a static buffer pool (`DROP_POOL`).
+
+```rust
+static DROP_POOL: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+const MAX_POOL_BUFFERS: usize = 16;
+```
+
+### How buffer guards work
+
+1. **Acquisition:** When `create_drop_image()` starts, it pops a pre-allocated `Vec<u8>` from `DROP_POOL`. If the pool is empty, it allocates a new vector.
+2. **Resizing:** The buffer is cleared and resized to 6,523,200 bytes.
+3. **Release:** When `BufferGuard` goes out of scope, its `Drop` implementation returns the buffer to `DROP_POOL` if the pool contains fewer than 16 buffers.
+
+## Pixel row copying
+
+Sumi copies card pixels directly into the canvas buffer using slice operations (`copy_card_pixels`). This approach avoids nested loop indexing overhead.
+
+```rust
+fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, pos: Point<u32>) {
+    let card_row_bytes = (card.size.width * 4) as usize;
+    let total_row_bytes = (total_width * 4) as usize;
+
+    let dest_rows = buffer.chunks_exact_mut(total_row_bytes);
+    let src_rows = card.pixels.chunks_exact(card_row_bytes);
+
+    for (dest_row, src_row) in dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize) {
+        let x_offset = (pos.x * 4) as usize;
+        dest_row[x_offset..x_offset + card_row_bytes].copy_from_slice(src_row);
+    }
+}
+```
+
+## Print number formatting and font rendering
+
+Sumi stamps print numbers onto the bottom right corner of each card.
+
+### Zero-allocation formatting
+Print numbers are formatted using stack-allocated buffers and the `itoa` crate:
+
+```rust
+fn format_print_number(print_num: u16, buf: &mut [u8; 8]) -> &[u8]
+```
+
+This formats the integer directly into a byte array without performing heap string allocations.
+
+### Font rasterization
+Sumi embeds the `LexendDeca-Bold.ttf` font file into the binary at compile time. Font glyphs are parsed into a static `fontdue::Font` instance on startup.
+
+### Text positioning and drop shadow
+* **Font size:** 60.0 pixels.
+* **Alignment:** Right-aligned relative to the right edge of the card.
+* **Drop shadow:** Sumi renders a 1-pixel dark drop shadow `(0, 0, 0, alpha)` at position `(x + 1, y + 1)` before rendering the main text in pure white `(255, 255, 255, alpha)` at position `(x, y)`.
+* **Alpha blending:** Pixel colors are blended into the canvas using subpixel alpha coverage.
+
+## WebP re-encoding
+
+The raw RGBA canvas buffer requires approximately 6.5 MB of memory. Sumi compresses this canvas into a WebP byte array using `webpx` before sending it over the network.
+
+### Encoder configuration
+
+```rust
+let settings = EncoderConfig::new()
+    .preset(Preset::Picture)
+    .hint(ImageHint::Picture)
+    .quality(85.0)
+    .method(0)
+    .alpha_compression(true)
+    .alpha_quality(85)
+    .alpha_filter(AlphaFilter::None)
+    .pass(1)
+    .exact(false)
+    .segments(1);
+```
+
+### Encoding characteristics
+
+* **Compression ratio:** Reduces payload size from 6.5 MB to 350 or 400 KB.
+* **Execution speed:** Speed level 0 (`method(0)`) executes WebP compression in approximately 30 to 100 milliseconds.
+* **Alpha channel support:** Retains transparent backgrounds for rounded card corners.
