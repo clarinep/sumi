@@ -1,0 +1,69 @@
+# Getting started
+
+This guide shows you how to configure, build, and run Sumi.
+
+## Prerequisites
+
+To build and run Sumi, you need the following tools installed on your system:
+
+* **Rust toolchain:** Rust 1.80 or newer (2021 edition).
+* **C compiler:** `gcc` or `clang` (required to compile the underlying `libwebp` C bindings through `webpx`).
+* **Card assets directory:** A directory containing base card images stored as `.webp` files.
+
+## Environment variables
+
+Sumi reads configuration settings from environment variables on startup.
+
+| Variable | Description | Default value |
+| :--- | :--- | :--- |
+| `HOST` | The network interface address for the HTTP server. | `0.0.0.0` |
+| `PORT` | The TCP port for the HTTP server. | `8888` |
+| `CARDS_DIR` | The file path to the directory containing card images. | `$HOME/Documents/kizunari/cards` if present, otherwise `assets/cards` |
+
+## Build the binary
+
+To compile Sumi for production deployment, run the release build command:
+
+```sh
+cargo build --release
+```
+
+The build process places the compiled binary at `target/release/sumi`.
+
+## Run Sumi
+
+Set your environment variables and launch the binary:
+
+```sh
+CARDS_DIR=/var/lib/blair/cards PORT=8888 HOST=0.0.0.0 ./target/release/sumi
+```
+
+On startup, Sumi displays system info, logs configuration settings, and pre-warms the card image cache in the background.
+
+```text
+sumi woke up with [8 cpu cores]
+config loaded
+      host: [0.0.0.0]
+      port: [8888]
+      card: [/var/lib/blair/cards]
+```
+
+You can send HTTP requests immediately. If a requested card image has not finished pre-warming in memory, Sumi loads and decodes it directly from disk on demand.
+
+## Stop the service
+
+Sumi handles termination signals (`SIGINT` and `SIGTERM`) gracefully. When you stop the service:
+
+1. Sumi stops accepting new HTTP connections.
+2. Sumi notifies active background rendering tasks to complete.
+3. Sumi waits up to 10 seconds for running rendering tasks to finish.
+4. Sumi exits cleanly.
+
+Example log output during shutdown:
+
+```text
+sumi is yawning, time to take a nap..
+finishing 2 active tasks..
+all active tasks finished!
+sumi is sleeping.. zZz
+```
