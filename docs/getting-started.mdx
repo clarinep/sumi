@@ -19,15 +19,15 @@ To build and run Sumi, you need the following tools installed on your system:
 
 Sumi reads configuration settings from environment variables on startup.
 
-<ParamField name="HOST" type="string" optional>
+<Property name="HOST" type="string" optional>
   The network interface address for the HTTP server. Default: `0.0.0.0`.
-</ParamField>
-<ParamField name="PORT" type="integer" optional>
+</Property>
+<Property name="PORT" type="integer" optional>
   The TCP port for the HTTP server. Default: `8888`.
-</ParamField>
-<ParamField name="CARDS_DIR" type="string" optional>
+</Property>
+<Property name="CARDS_DIR" type="string" optional>
   The file path to the directory containing card images. Default: `$HOME/Documents/kizunari/cards` if present, otherwise `assets/cards`.
-</ParamField>
+</Property>
 
 ## Build the binary
 
