@@ -1,3 +1,8 @@
+---
+title: "Getting started"
+description: "Configure, build, and run the Sumi microservice."
+---
+
 # Getting started
 
 This guide shows you how to configure, build, and run Sumi.
@@ -6,19 +11,23 @@ This guide shows you how to configure, build, and run Sumi.
 
 To build and run Sumi, you need the following tools installed on your system:
 
-* **Rust toolchain:** Rust 1.80 or newer (2021 edition).
-* **C compiler:** `gcc` or `clang` (required to compile the underlying `libwebp` C bindings through `webpx`).
-* **Card assets directory:** A directory containing base card images stored as `.webp` files.
+- **Rust toolchain:** Rust 1.80 or newer (2021 edition).
+- **C compiler:** `gcc` or `clang` (required to compile the underlying `libwebp` C bindings through `webpx`).
+- **Card assets directory:** A directory containing base card images stored as `.webp` files.
 
 ## Environment variables
 
 Sumi reads configuration settings from environment variables on startup.
 
-| Variable | Description | Default value |
-| :--- | :--- | :--- |
-| `HOST` | The network interface address for the HTTP server. | `0.0.0.0` |
-| `PORT` | The TCP port for the HTTP server. | `8888` |
-| `CARDS_DIR` | The file path to the directory containing card images. | `$HOME/Documents/kizunari/cards` if present, otherwise `assets/cards` |
+<ParamField name="HOST" type="string" optional>
+  The network interface address for the HTTP server. Default: `0.0.0.0`.
+</ParamField>
+<ParamField name="PORT" type="integer" optional>
+  The TCP port for the HTTP server. Default: `8888`.
+</ParamField>
+<ParamField name="CARDS_DIR" type="string" optional>
+  The file path to the directory containing card images. Default: `$HOME/Documents/kizunari/cards` if present, otherwise `assets/cards`.
+</ParamField>
 
 ## Build the binary
 
@@ -48,16 +57,28 @@ config loaded
       card: [/var/lib/blair/cards]
 ```
 
-You can send HTTP requests immediately. If a requested card image has not finished pre-warming in memory, Sumi loads and decodes it directly from disk on demand.
+<Info>
+  You can send HTTP requests immediately. If a requested card image has not finished pre-warming in memory, Sumi loads and decodes it directly from disk on demand.
+</Info>
 
 ## Stop the service
 
 Sumi handles termination signals (`SIGINT` and `SIGTERM`) gracefully. When you stop the service:
 
-1. Sumi stops accepting new HTTP connections.
-2. Sumi notifies active background rendering tasks to complete.
-3. Sumi waits up to 10 seconds for running rendering tasks to finish.
-4. Sumi exits cleanly.
+<Steps>
+  <Step title="Stop connections">
+    Sumi stops accepting new HTTP connections.
+  </Step>
+  <Step title="Notify tasks">
+    Sumi notifies active background rendering tasks to complete.
+  </Step>
+  <Step title="Wait for finish">
+    Sumi waits up to 10 seconds for running rendering tasks to finish.
+  </Step>
+  <Step title="Exit cleanly">
+    Sumi exits cleanly.
+  </Step>
+</Steps>
 
 Example log output during shutdown:
 
