@@ -1,5 +1,59 @@
 {
-  "name": "sumi",
-  "description": "stellar image renderer for blair",
-  "theme": "#000000"
+  "name": "Sumi",
+  "description": "High-performance card image renderer for Blair",
+  "theme": "#ffb4a2",
+  "navigation": [
+    {
+      "title": "Overview",
+      "path": "/"
+    },
+    {
+      "title": "Tutorials",
+      "children": [
+        {
+          "title": "Getting started",
+          "path": "/getting-started"
+        }
+      ]
+    },
+    {
+      "title": "How-to guides",
+      "children": [
+        {
+          "title": "Run performance benchmarks",
+          "path": "/development/benchmarking"
+        },
+        {
+          "title": "Enforce code quality",
+          "path": "/development/linting"
+        }
+      ]
+    },
+    {
+      "title": "Reference",
+      "children": [
+        {
+          "title": "API reference",
+          "path": "/api"
+        }
+      ]
+    },
+    {
+      "title": "Explanation",
+      "children": [
+        {
+          "title": "Core engine and lifecycle",
+          "path": "/architecture/engine"
+        },
+        {
+          "title": "Image caching and memory",
+          "path": "/architecture/caching"
+        },
+        {
+          "title": "Rendering pipeline",
+          "path": "/architecture/rendering"
+        }
+      ]
+    }
+  ]
 }
