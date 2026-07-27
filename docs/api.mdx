@@ -1,0 +1,121 @@
+# API reference
+
+Sumi provides HTTP endpoints to render card images, check server health, and export execution metrics.
+
+## Endpoints overview
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/render/drop` | Renders a composite card drop image in WebP format. |
+| `GET` | `/health` | Returns server health status. |
+| `GET` | `/metrics` | Returns server uptime and rendering statistics. |
+
+## Render card drop image
+
+`GET /render/drop`
+
+Combines two card images side by side, stamps print numbers on each card, and returns a single compressed WebP image.
+
+### Query parameters
+
+| Parameter | Type | Required | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `left` | String | Yes | None | The relative card key for the left card (for example, `genshin/fischl_1`). Do not include the `.webp` file extension. |
+| `right` | String | Yes | None | The relative card key for the right card (for example, `honkai/kafka_1`). |
+| `left_print` | Integer (`u16`) | No | `1` | The print number for the left card. Values are clamped to the range `1` to `999`. |
+| `right_print` | Integer (`u16`) | No | `1` | The print number for the right card. Values are clamped to the range `1` to `999`. |
+
+### Example request
+
+```http
+GET /render/drop?left=genshin/fischl_1&right=honkai/kafka_1&left_print=42&right_print=102 HTTP/1.1
+Host: localhost:8888
+```
+
+### HTTP responses
+
+#### 200 OK
+Returned when image rendering succeeds.
+
+* **Headers:** `Content-Type: image/webp`
+* **Body:** Binary WebP image payload.
+
+#### 404 Not Found
+Returned when the requested left or right card path is not registered in the card index.
+
+* **Headers:** `Content-Type: application/json`
+* **Body:**
+
+```json
+{
+  "error": "card not found: genshin/missing_card"
+}
+```
+
+#### 429 Too Many Requests
+Returned when the request waits in the task queue longer than the 5-second queue timeout (`QUEUE_TIMEOUT`).
+
+* **Headers:** `Content-Type: application/json`
+* **Body:**
+
+```json
+{
+  "error": "render timed out"
+}
+```
+
+#### 500 Internal Server Error
+Returned when image decoding fails, canvas memory processing encounters an error, or total request execution exceeds 10 seconds.
+
+* **Headers:** `Content-Type: application/json`
+* **Body:**
+
+```json
+{
+  "error": "failed to decode webp for 'assets/cards/invalid.webp'"
+}
+```
+
+## Health check
+
+`GET /health`
+
+Verifies that the HTTP server is running and accepting connections. Use this endpoint for container readiness and liveness probes.
+
+### Response
+
+* **Status:** `200 OK`
+* **Headers:** `Content-Type: text/plain`
+* **Body:** `OK`
+
+## Metrics
+
+`GET /metrics`
+
+Retrieves operational counters and render metrics.
+
+### Response
+
+* **Status:** `200 OK`
+* **Headers:** `Content-Type: application/json`
+* **Body:**
+
+```json
+{
+  "uptime": 3600,
+  "successful_renders": 1500,
+  "failed_renders": 12,
+  "total_image_bytes": 102400000,
+  "total_render_duration_ms": 67800
+}
+```
+
+### Metrics fields
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `uptime` | Integer (`u64`) | Elapsed time in seconds since the server started. |
+| `successful_renders` | Integer (`u64`) | Total number of successfully completed rendering requests. |
+| `failed_renders` | Integer (`u64`) | Total number of failed rendering requests. |
+| `total_image_bytes` | Integer (`u64`) | Cumulative byte size of all generated WebP image payloads delivered to clients. |
+| `total_render_duration_ms` | Integer (`u64`) | Cumulative duration in milliseconds spent executing image composition and encoding tasks. |
