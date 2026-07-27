@@ -1,3 +1,8 @@
+---
+title: "API reference"
+description: "HTTP endpoints, error responses, and metric fields."
+---
+
 # API reference
 
 Sumi provides HTTP endpoints to render card images, check server health, and export execution metrics.
@@ -18,12 +23,21 @@ Combines two card images side by side, stamps print numbers on each card, and re
 
 ### Query parameters
 
-| Parameter | Type | Required | Default | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `left` | String | Yes | None | The relative card key for the left card (for example, `genshin/fischl_1`). Do not include the `.webp` file extension. |
-| `right` | String | Yes | None | The relative card key for the right card (for example, `honkai/kafka_1`). |
-| `left_print` | Integer (`u16`) | No | `1` | The print number for the left card. Values are clamped to the range `1` to `999`. |
-| `right_print` | Integer (`u16`) | No | `1` | The print number for the right card. Values are clamped to the range `1` to `999`. |
+<ParamField name="left" type="string" required>
+  The relative card key for the left card (for example, `genshin/fischl_1`). Do not include the `.webp` file extension.
+</ParamField>
+
+<ParamField name="right" type="string" required>
+  The relative card key for the right card (for example, `honkai/kafka_1`).
+</ParamField>
+
+<ParamField name="left_print" type="integer" optional>
+  The print number for the left card. Default: `1`. Values are clamped to the range `1` to `999`.
+</ParamField>
+
+<ParamField name="right_print" type="integer" optional>
+  The print number for the right card. Default: `1`. Values are clamped to the range `1` to `999`.
+</ParamField>
 
 ### Example request
 
@@ -34,47 +48,48 @@ Host: localhost:8888
 
 ### HTTP responses
 
-#### 200 OK
-Returned when image rendering succeeds.
+<Tabs>
+  <Tab title="200 OK">
+    Returned when image rendering succeeds.
 
-* **Headers:** `Content-Type: image/webp`
-* **Body:** Binary WebP image payload.
+    **Headers:** `Content-Type: image/webp`
 
-#### 404 Not Found
-Returned when the requested left or right card path is not registered in the card index.
+    **Body:** Binary WebP image payload.
+  </Tab>
+  <Tab title="404 Not Found">
+    Returned when the requested left or right card path is not registered in the card index.
 
-* **Headers:** `Content-Type: application/json`
-* **Body:**
+    **Headers:** `Content-Type: application/json`
 
-```json
-{
-  "error": "card not found: genshin/missing_card"
-}
-```
+    ```json
+    {
+      "error": "card not found: genshin/missing_card"
+    }
+    ```
+  </Tab>
+  <Tab title="429 Too Many Requests">
+    Returned when the request waits in the task queue longer than the 5-second queue timeout (`QUEUE_TIMEOUT`).
 
-#### 429 Too Many Requests
-Returned when the request waits in the task queue longer than the 5-second queue timeout (`QUEUE_TIMEOUT`).
+    **Headers:** `Content-Type: application/json`
 
-* **Headers:** `Content-Type: application/json`
-* **Body:**
+    ```json
+    {
+      "error": "render timed out"
+    }
+    ```
+  </Tab>
+  <Tab title="500 Internal Error">
+    Returned when image decoding fails, canvas memory processing encounters an error, or total request execution exceeds 10 seconds.
 
-```json
-{
-  "error": "render timed out"
-}
-```
+    **Headers:** `Content-Type: application/json`
 
-#### 500 Internal Server Error
-Returned when image decoding fails, canvas memory processing encounters an error, or total request execution exceeds 10 seconds.
-
-* **Headers:** `Content-Type: application/json`
-* **Body:**
-
-```json
-{
-  "error": "failed to decode webp for 'assets/cards/invalid.webp'"
-}
-```
+    ```json
+    {
+      "error": "failed to decode webp for 'assets/cards/invalid.webp'"
+    }
+    ```
+  </Tab>
+</Tabs>
 
 ## Health check
 
@@ -84,9 +99,9 @@ Verifies that the HTTP server is running and accepting connections. Use this end
 
 ### Response
 
-* **Status:** `200 OK`
-* **Headers:** `Content-Type: text/plain`
-* **Body:** `OK`
+**Status:** `200 OK`
+**Headers:** `Content-Type: text/plain`
+**Body:** `OK`
 
 ## Metrics
 
@@ -96,9 +111,8 @@ Retrieves operational counters and render metrics.
 
 ### Response
 
-* **Status:** `200 OK`
-* **Headers:** `Content-Type: application/json`
-* **Body:**
+**Status:** `200 OK`
+**Headers:** `Content-Type: application/json`
 
 ```json
 {
@@ -112,10 +126,22 @@ Retrieves operational counters and render metrics.
 
 ### Metrics fields
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `uptime` | Integer (`u64`) | Elapsed time in seconds since the server started. |
-| `successful_renders` | Integer (`u64`) | Total number of successfully completed rendering requests. |
-| `failed_renders` | Integer (`u64`) | Total number of failed rendering requests. |
-| `total_image_bytes` | Integer (`u64`) | Cumulative byte size of all generated WebP image payloads delivered to clients. |
-| `total_render_duration_ms` | Integer (`u64`) | Cumulative duration in milliseconds spent executing image composition and encoding tasks. |
+<ResponseField name="uptime" type="integer">
+  Elapsed time in seconds since the server started.
+</ResponseField>
+
+<ResponseField name="successful_renders" type="integer">
+  Total number of successfully completed rendering requests.
+</ResponseField>
+
+<ResponseField name="failed_renders" type="integer">
+  Total number of failed rendering requests.
+</ResponseField>
+
+<ResponseField name="total_image_bytes" type="integer">
+  Cumulative byte size of all generated WebP image payloads delivered to clients.
+</ResponseField>
+
+<ResponseField name="total_render_duration_ms" type="integer">
+  Cumulative duration in milliseconds spent executing image composition and encoding tasks.
+</ResponseField>
