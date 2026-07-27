@@ -1,59 +1,121 @@
 {
+  "$schema": "https://docs.page/schema.json",
   "name": "Sumi",
   "description": "High-performance card image renderer for Blair",
-  "theme": "#ffb4a2",
-  "navigation": [
+  "theme": {
+    "primary": "#ffb4a2"
+  },
+  "header": {
+    "showName": true,
+    "links": [
+      {
+        "title": "GitHub",
+        "href": "https://github.com/blairtcg/sumi"
+      },
+      {
+        "title": "Discord",
+        "href": "https://discord.gg/blair",
+        "cta": true
+      }
+    ]
+  },
+  "social": {
+    "github": "https://github.com/blairtcg/sumi",
+    "discord": "https://discord.gg/blair"
+  },
+  "anchors": [
     {
-      "title": "Overview",
-      "path": "/"
+      "title": "API Reference",
+      "icon": "code",
+      "href": "/api"
     },
     {
-      "title": "Tutorials",
-      "children": [
+      "title": "Getting Started",
+      "icon": "rocket",
+      "href": "/getting-started"
+    },
+    {
+      "title": "Benchmarks",
+      "icon": "gauge-high",
+      "href": "/development/benchmarking"
+    }
+  ],
+  "sidebar": [
+    {
+      "group": "Overview",
+      "icon": "house",
+      "pages": [
         {
-          "title": "Getting started",
-          "path": "/getting-started"
+          "title": "Introduction",
+          "href": "/",
+          "icon": "house"
         }
       ]
     },
     {
-      "title": "How-to guides",
-      "children": [
+      "group": "Tutorials",
+      "icon": "graduation-cap",
+      "pages": [
+        {
+          "title": "Getting started",
+          "href": "/getting-started",
+          "icon": "rocket"
+        }
+      ]
+    },
+    {
+      "group": "How-to guides",
+      "icon": "screwdriver-wrench",
+      "pages": [
         {
           "title": "Run performance benchmarks",
-          "path": "/development/benchmarking"
+          "href": "/development/benchmarking",
+          "icon": "gauge-high"
         },
         {
           "title": "Enforce code quality",
-          "path": "/development/linting"
+          "href": "/development/linting",
+          "icon": "shield-check"
         }
       ]
     },
     {
-      "title": "Reference",
-      "children": [
+      "group": "Reference",
+      "icon": "book",
+      "pages": [
         {
           "title": "API reference",
-          "path": "/api"
+          "href": "/api",
+          "icon": "code"
         }
       ]
     },
     {
-      "title": "Explanation",
-      "children": [
+      "group": "Explanation",
+      "icon": "lightbulb",
+      "pages": [
         {
-          "title": "Core engine and lifecycle",
-          "path": "/architecture/engine"
+          "title": "Core engine",
+          "href": "/architecture/engine",
+          "icon": "cpu"
         },
         {
-          "title": "Image caching and memory",
-          "path": "/architecture/caching"
+          "title": "Image caching",
+          "href": "/architecture/caching",
+          "icon": "memory"
         },
         {
           "title": "Rendering pipeline",
-          "path": "/architecture/rendering"
+          "href": "/architecture/rendering",
+          "icon": "layer-group"
         }
       ]
     }
-  ]
+  ],
+  "content": {
+    "headerDepth": 3,
+    "zoomImages": true,
+    "automaticallyInferNextPrevious": true,
+    "showPageTitle": true
+  }
 }
