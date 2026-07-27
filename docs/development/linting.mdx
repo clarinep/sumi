@@ -1,0 +1,76 @@
+# Enforce code quality
+
+This guide shows you how to run automated code lints, configure Clippy rules, and follow defensive Rust programming patterns in Sumi.
+
+## Automated linting with Clippy
+
+Sumi uses GitHub Actions (`clippy.yml`) to enforce code formatting and linting standards on every code push.
+
+The workflow executes `cargo clippy` with strict lint categories enabled:
+
+* `#![deny(warnings)]`: Treats all compiler and Clippy warnings as fatal errors.
+* `clippy::perf`: Detects inefficient code patterns and unnecessary allocations.
+* `clippy::pedantic`: Enforces strict type explicit checks and API naming consistency.
+* `clippy::nursery`: Applies experimental lints to catch subtle logic bugs early.
+
+### Suppress lints in specific modules
+
+Where performance optimization requires explicit type casting, you can selectively suppress specific Clippy warnings. For example, in `src/renderer/print.rs`:
+
+```rust
+#[allow(clippy::cast_sign_loss, clippy::similar_names)]
+```
+
+This allows pixel coordinate calculations to perform signed-to-unsigned conversions without generating lint warnings.
+
+## Defensive programming patterns
+
+Sumi processes untrusted network requests. Use these defensive Rust patterns to ensure process stability and memory safety.
+
+### Safe numeric conversions
+
+In non-hot execution paths, avoid using the `as` operator for numerical type conversions. Direct `as` casts can silently truncate data if values overflow the target integer type.
+
+Instead, use `u64::try_from` with fallback bounds:
+
+```rust
+let bytes_sent = image_data.len();
+let image_bytes = u64::try_from(bytes_sent).unwrap_or(u64::MAX);
+let render_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+```
+
+If conversion fails, the metric counter defaults to `u64::MAX` rather than panicking or truncating data.
+
+### Zero-panic runtime design
+
+Design runtime code to run without panicking during HTTP request processing. A panic inside an async task can cause unhandled task aborts.
+
+* **Startup unwraps:** Unwrapping is permitted only during initial server startup. If font loading fails at boot, the server terminates immediately.
+* **Runtime error propagation:** During HTTP request execution, all fallible operations return a `RenderError` enum. Do not use `.unwrap()` or `.expect()` in request handlers.
+
+### Error types
+
+The `RenderError` enum explicitly categorizes all failure modes:
+
+```rust
+pub enum RenderError {
+    CardNotFound(String),
+    Timeout,
+    Internal(String),
+    EncodeError(String),
+}
+```
+
+Axum converts these errors into structured JSON responses with appropriate HTTP status codes.
+
+## Release profile security
+
+Sumi enables explicit overflow checks in its `Cargo.toml` release profile:
+
+```toml
+[profile.release]
+overflow-checks = true
+lto = true
+```
+
+By default, Rust disables integer overflow checks in release builds to improve performance slightly. Sumi retains `overflow-checks = true` to prevent hidden integer arithmetic bugs.
