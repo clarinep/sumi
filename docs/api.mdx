@@ -23,21 +23,21 @@ Combines two card images side by side, stamps print numbers on each card, and re
 
 ### Query parameters
 
-<ParamField name="left" type="string" required>
+<Property name="left" type="string" required>
   The relative card key for the left card (for example, `genshin/fischl_1`). Do not include the `.webp` file extension.
-</ParamField>
+</Property>
 
-<ParamField name="right" type="string" required>
+<Property name="right" type="string" required>
   The relative card key for the right card (for example, `honkai/kafka_1`).
-</ParamField>
+</Property>
 
-<ParamField name="left_print" type="integer" optional>
+<Property name="left_print" type="integer" optional>
   The print number for the left card. Default: `1`. Values are clamped to the range `1` to `999`.
-</ParamField>
+</Property>
 
-<ParamField name="right_print" type="integer" optional>
+<Property name="right_print" type="integer" optional>
   The print number for the right card. Default: `1`. Values are clamped to the range `1` to `999`.
-</ParamField>
+</Property>
 
 ### Example request
 
@@ -126,22 +126,22 @@ Retrieves operational counters and render metrics.
 
 ### Metrics fields
 
-<ResponseField name="uptime" type="integer">
+<Property name="uptime" type="integer">
   Elapsed time in seconds since the server started.
-</ResponseField>
+</Property>
 
-<ResponseField name="successful_renders" type="integer">
+<Property name="successful_renders" type="integer">
   Total number of successfully completed rendering requests.
-</ResponseField>
+</Property>
 
-<ResponseField name="failed_renders" type="integer">
+<Property name="failed_renders" type="integer">
   Total number of failed rendering requests.
-</ResponseField>
+</Property>
 
-<ResponseField name="total_image_bytes" type="integer">
+<Property name="total_image_bytes" type="integer">
   Cumulative byte size of all generated WebP image payloads delivered to clients.
-</ResponseField>
+</Property>
 
-<ResponseField name="total_render_duration_ms" type="integer">
+<Property name="total_render_duration_ms" type="integer">
   Cumulative duration in milliseconds spent executing image composition and encoding tasks.
-</ResponseField>
+</Property>
