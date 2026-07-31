@@ -21,7 +21,6 @@ use tokio::{
     fs as tokio_fs, spawn,
     task::{self, JoinSet},
 };
-use webpx::Decoder;
 
 use crate::renderer::{
     error::{RenderError, Result},
@@ -87,9 +86,9 @@ impl CardCache {
                         let name_str = key_path.to_string_lossy().replace('\\', "/");
                         index.insert(name_str.into(), path.into());
                     }
-                } else if ext.eq_ignore_ascii_case("png")
-                    || ext.eq_ignore_ascii_case("jpg")
-                    || ext.eq_ignore_ascii_case("jpeg")
+                } else if ext.eq_ignore_ascii_case("png") 
+                    || ext.eq_ignore_ascii_case("jpg") 
+                    || ext.eq_ignore_ascii_case("jpeg") 
                 {
                     tracing::warn!("ignored '{}' (only webp supported)", path.display());
                 }
@@ -153,10 +152,7 @@ impl CardCache {
                     let file_len = u64::try_from(file_bytes.len()).unwrap_or(u64::MAX);
 
                     let result = task::spawn_blocking(move || {
-                        let decode_res =
-                            Decoder::new(&file_bytes).and_then(Decoder::decode_rgba_raw);
-
-                        decode_res.ok().map(|(pixels, width, height)| {
+                        webpx::decode_rgba(&file_bytes).ok().map(|(pixels, width, height)| {
                             if width != 725 || height != 1040 {
                                 tracing::warn!(
                                     "card '{}' dimension is {}x{} (expected 725x1040)",
@@ -224,14 +220,7 @@ impl CardCache {
         }
 
         let arc_img = task::spawn_blocking(move || {
-            let (pixels, width, height) = Decoder::new(&file_bytes)
-                .map_err(|e| {
-                    RenderError::Internal(format!(
-                        "failed to start decoder for '{}': {e:?}",
-                        path.display()
-                    ))
-                })?
-                .decode_rgba_raw()
+            let (pixels, width, height) = webpx::decode_rgba(&file_bytes)
                 .map_err(|e| {
                     RenderError::Internal(format!(
                         "failed to decode webp for '{}': {e:?}",
