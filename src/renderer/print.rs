@@ -38,23 +38,15 @@ static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
 
     let render_char = |c: char| -> Letter {
         let (metrics, coverage) = font.rasterize(c, TEXT_SIZE);
-        
+
         let mut shadow_pass = Vec::with_capacity(coverage.len());
         let mut white_pass = Vec::with_capacity(coverage.len());
-        
-        for &cov in coverage.iter() {
-            white_pass.push(GlyphPixel {
-                fg_rgb: cov,
-                fg_a: cov,
-                inv_a: 255 - cov,
-            });
-            
-            let shadow_a = ((cov as u32 * 160) / 255) as u8;
-            shadow_pass.push(GlyphPixel {
-                fg_rgb: 0,
-                fg_a: shadow_a,
-                inv_a: 255 - shadow_a,
-            });
+
+        for &cov in &coverage {
+            white_pass.push(GlyphPixel { fg_rgb: cov, fg_a: cov, inv_a: 255 - cov });
+
+            let shadow_a = ((u32::from(cov) * 160) / 255) as u8;
+            shadow_pass.push(GlyphPixel { fg_rgb: 0, fg_a: shadow_a, inv_a: 255 - shadow_a });
         }
 
         Letter {
@@ -100,14 +92,7 @@ pub(super) fn draw_print_number(
         true,
     )?;
 
-    draw_pass(
-        canvas_width,
-        canvas_height,
-        canvas_buf,
-        print_number,
-        pos,
-        false,
-    )?;
+    draw_pass(canvas_width, canvas_height, canvas_buf, print_number, pos, false)?;
 
     Ok(())
 }
@@ -154,11 +139,7 @@ fn draw_pass(
             continue;
         }
 
-        let glyph_pass = if is_shadow {
-            &letter.shadow_pass
-        } else {
-            &letter.white_pass
-        };
+        let glyph_pass = if is_shadow { &letter.shadow_pass } else { &letter.white_pass };
 
         for draw_y_offset in draw_y_start..draw_y_end {
             let canvas_y = draw_y + draw_y_offset;
@@ -185,17 +166,15 @@ fn draw_pass(
                     RenderError::Internal("letter coverage range out of bounds".to_string())
                 })?;
 
-            for (pixel, glyph) in
-                target_pixels.chunks_exact_mut(4).zip(letter_row.iter())
-            {
-                let fg_rgb = glyph.fg_rgb as u16;
-                let fg_a = glyph.fg_a as u16;
-                let inv_a = glyph.inv_a as u16;
+            for (pixel, glyph) in target_pixels.chunks_exact_mut(4).zip(letter_row.iter()) {
+                let fg_rgb = u16::from(glyph.fg_rgb);
+                let fg_a = u16::from(glyph.fg_a);
+                let inv_a = u16::from(glyph.inv_a);
 
-                pixel[0] = (fg_rgb + ((pixel[0] as u16 * inv_a) / 255)) as u8;
-                pixel[1] = (fg_rgb + ((pixel[1] as u16 * inv_a) / 255)) as u8;
-                pixel[2] = (fg_rgb + ((pixel[2] as u16 * inv_a) / 255)) as u8;
-                pixel[3] = (fg_a + ((pixel[3] as u16 * inv_a) / 255)) as u8;
+                pixel[0] = (fg_rgb + ((u16::from(pixel[0]) * inv_a) / 255)) as u8;
+                pixel[1] = (fg_rgb + ((u16::from(pixel[1]) * inv_a) / 255)) as u8;
+                pixel[2] = (fg_rgb + ((u16::from(pixel[2]) * inv_a) / 255)) as u8;
+                pixel[3] = (fg_a + ((u16::from(pixel[3]) * inv_a) / 255)) as u8;
             }
         }
 
