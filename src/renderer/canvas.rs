@@ -1,14 +1,15 @@
-use std::{sync::Mutex, time::Instant};
+use crossbeam_queue::ArrayQueue;
+use std::{sync::LazyLock, time::Instant};
 
 use bytes::Bytes;
 use itoa::Buffer;
 
 use super::{
-    PrintNumber,
     encoder::encode_webp,
     error::Result,
     pixels::{Point, RawCardImage},
     print::{draw_print_number, measure_print_number},
+    PrintNumber,
 };
 
 const TEXT_SIZE: f32 = 60.0;
@@ -25,9 +26,7 @@ fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, po
     let dest_rows = buffer.chunks_exact_mut(total_row_bytes);
     let src_rows = card.pixels.chunks_exact(card_row_bytes);
 
-    for (dest_row, src_row) in
-        dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize)
-    {
+    for (dest_row, src_row) in dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize) {
         let x_offset = (pos.x * 4) as usize;
         dest_row[x_offset..x_offset + card_row_bytes].copy_from_slice(src_row);
     }
@@ -44,7 +43,7 @@ fn format_print_number(print_num: u16, buf: &mut [u8; 8]) -> &[u8] {
     &buf[..len]
 }
 
-static DROP_POOL: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+static DROP_POOL: LazyLock<ArrayQueue<Vec<u8>>> = LazyLock::new(|| ArrayQueue::new(MAX_POOL_BUFFERS));
 const MAX_POOL_BUFFERS: usize = 16;
 
 struct BufferGuard {
@@ -63,11 +62,8 @@ impl BufferGuard {
 impl Drop for BufferGuard {
     #[inline]
     fn drop(&mut self) {
-        let mut pool = DROP_POOL.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if pool.len() < MAX_POOL_BUFFERS {
-            let buf = std::mem::take(&mut self.buffer);
-            pool.push(buf);
-        }
+        let buf = std::mem::take(&mut self.buffer);
+        let _ = DROP_POOL.push(buf);
     }
 }
 
@@ -110,8 +106,6 @@ pub(super) fn create_drop_image(
 
     let mut buffer = BufferGuard::new(
         DROP_POOL
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .pop()
             .unwrap_or_default(),
         required_len,
