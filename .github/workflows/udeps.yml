@@ -17,22 +17,13 @@ jobs:
       - name: Set up Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-unused-features
+      - name: Install cargo-features-manager
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-unused-features
+          tool: cargo-features-manager
 
-      - name: Workaround for cargo-unused-features
-        run: sed -i 's/edition = "2024"/edition = "2021"/' Cargo.toml
-
-      - name: Run cargo-unused-features
-        run: unused-features analyze
+      - name: Prune Unused Features
+        run: cargo features prune
 
       - name: Show Results
-        run: cat report.json | jq .
-
-      - name: Upload Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: unused-features-report
-          path: report.json
+        run: git diff Cargo.toml
