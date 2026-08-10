@@ -1,21 +1,26 @@
-name: Check Unused Dependencies (cargo-udeps)
+name: Check Unused Features
 
 on:
-  workflow_dispatch: # Allows triggering this workflow manually from the Actions tab
+  workflow_dispatch: # Allows triggering this manually
 
 jobs:
-  udeps:
-    name: Run cargo-udeps
+  check-features:
+    name: Find Unused Cargo Features
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install nightly Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-udeps
-        uses: taiki-e/install-action@cargo-udeps
+      - name: Set up Rust cache
+        uses: Swatinem/rust-cache@v2
 
-      - name: Run cargo-udeps
-        run: cargo +nightly udeps
+      - name: Install cargo-unused-features
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-unused-features
+
+      - name: Run cargo-unused-features
+        run: cargo unused-features analyze
