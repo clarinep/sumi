@@ -2,10 +2,6 @@
 name = "koma"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.87"
-authors = ["Sumi Core Engine Team"]
-description = "Hyper-optimized, zero-copy, single-frame lossy VP8 WebP encoder tuned for anime art compression."
-license = "MIT OR Apache-2.0"
 
 [dependencies]
 bytes = { version = "1.12.1", default-features = false }
