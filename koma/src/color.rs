@@ -243,15 +243,16 @@ pub fn rgba_to_yuv420p(
                 let g_sum0 = _mm_add_epi16(g0_vec, g1_vec);
                 let b_sum0 = _mm_add_epi16(b0_vec, b1_vec);
 
-                let r_even = _mm_and_si128(r_sum0, _mm_set_epi16(0, 0xFFFF as i16, 0, 0xFFFF as i16, 0, 0xFFFF as i16, 0, 0xFFFF as i16));
+                let mask_even = _mm_set_epi16(0, -1, 0, -1, 0, -1, 0, -1);
+                let r_even = _mm_and_si128(r_sum0, mask_even);
                 let r_odd = _mm_srli_si128(r_sum0, 2);
                 let r_avg = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(r_even, r_odd), _mm_set1_epi16(2)), 2);
 
-                let g_even = _mm_and_si128(g_sum0, _mm_set_epi16(0, 0xFFFF as i16, 0, 0xFFFF as i16, 0, 0xFFFF as i16, 0, 0xFFFF as i16));
+                let g_even = _mm_and_si128(g_sum0, mask_even);
                 let g_odd = _mm_srli_si128(g_sum0, 2);
                 let g_avg = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(g_even, g_odd), _mm_set1_epi16(2)), 2);
 
-                let b_even = _mm_and_si128(b_sum0, _mm_set_epi16(0, 0xFFFF as i16, 0, 0xFFFF as i16, 0, 0xFFFF as i16, 0, 0xFFFF as i16));
+                let b_even = _mm_and_si128(b_sum0, mask_even);
                 let b_odd = _mm_srli_si128(b_sum0, 2);
                 let b_avg = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(b_even, b_odd), _mm_set1_epi16(2)), 2);
 
