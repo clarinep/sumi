@@ -247,7 +247,7 @@ pub fn encode_lossy_frame(
     let mb_rows = pad_height / 16;
 
     let q_idx = quality_to_q_index(config.quality);
-    let q_y1_dc = FastQuantizer::new(DC_QLOOKUP[q_idx]);
+    let _q_y1_dc = FastQuantizer::new(DC_QLOOKUP[q_idx]);
     let q_y1_ac = FastQuantizer::new(AC_QLOOKUP[q_idx]);
     let q_y2_dc = FastQuantizer::new(DC_QLOOKUP[q_idx] * 2);
     let q_y2_ac = FastQuantizer::new(AC_QLOOKUP[q_idx] * 155 / 100);
