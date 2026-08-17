@@ -3,20 +3,18 @@
 //! Reuses large intermediate pixel planes, transform scratchpads, and bitstream buffers
 //! across multiple rendering jobs using lock-free queue structures (`ArrayQueue`).
 
+use crossbeam_queue::ArrayQueue;
 use std::sync::LazyLock;
 
-use crossbeam_queue::ArrayQueue;
-
-use crate::{
-    alpha::extract_and_compress_alpha,
-    color::rgba_to_yuv420p,
-    error::{KomaError, Result},
-    riff::assemble_webp,
-    vp8::{EncoderConfig, encode_lossy_frame},
-};
+use crate::alpha::extract_and_compress_alpha;
+use crate::color::rgba_to_yuv420p;
+use crate::error::{KomaError, Result};
+use crate::riff::assemble_webp;
+use crate::vp8::{encode_lossy_frame, EncoderConfig};
 
 /// Global lock-free pool of pre-allocated [`EncoderScratch`] buffers.
-pub static ENCODER_SCRATCH_POOL: LazyLock<ScratchPool> = LazyLock::new(|| ScratchPool::new(16));
+pub static ENCODER_SCRATCH_POOL: LazyLock<ScratchPool> =
+    LazyLock::new(|| ScratchPool::new(16));
 
 /// A lock-free pool of [`EncoderScratch`] instances.
 #[derive(Debug)]
@@ -27,13 +25,17 @@ pub struct ScratchPool {
 impl ScratchPool {
     /// Creates a new pool with the given capacity.
     pub fn new(capacity: usize) -> Self {
-        Self { queue: ArrayQueue::new(capacity) }
+        Self {
+            queue: ArrayQueue::new(capacity),
+        }
     }
 
     /// Retrieves a scratch buffer from the pool or allocates a new one if exhausted.
     pub fn get(&self) -> ScratchGuard {
         let scratch = self.queue.pop().unwrap_or_else(EncoderScratch::new);
-        ScratchGuard { scratch: Some(scratch) }
+        ScratchGuard {
+            scratch: Some(scratch),
+        }
     }
 
     /// Returns a scratch buffer back to the pool.
@@ -113,13 +115,25 @@ impl EncoderScratch {
         config: &EncoderConfig,
     ) -> Result<&[u8]> {
         if width == 0 || height == 0 {
+            tracing::error!(
+                "encode_rgba failed: invalid dimensions {}x{} (must be > 0)",
+                width, height
+            );
             return Err(KomaError::InvalidDimensions { width, height });
         }
 
         let total_pixels = (width as usize) * (height as usize);
         let expected_bytes = total_pixels * 4;
         if rgba.len() < expected_bytes {
-            return Err(KomaError::BufferTooSmall { expected: expected_bytes, actual: rgba.len() });
+            tracing::error!(
+                "encode_rgba failed: buffer too small. expected at least {} bytes, got {}",
+                expected_bytes,
+                rgba.len()
+            );
+            return Err(KomaError::BufferTooSmall {
+                expected: expected_bytes,
+                actual: rgba.len(),
+            });
         }
 
         let pad_width = ((width as usize + 15) / 16) * 16;
@@ -135,7 +149,11 @@ impl EncoderScratch {
             &mut self.alpha_plane,
             &mut self.alph_chunk,
         );
-        let alpha_payload = if has_alpha { Some(self.alph_chunk.as_slice()) } else { None };
+        let alpha_payload = if has_alpha {
+            Some(self.alph_chunk.as_slice())
+        } else {
+            None
+        };
 
         // 2. Convert RGBA to planar YUV420p with auto-vectorized contiguous row loops
         rgba_to_yuv420p(
@@ -167,7 +185,13 @@ impl EncoderScratch {
         );
 
         // 4. Assemble WebP / VP8X container
-        assemble_webp(width, height, &self.vp8_frame, alpha_payload, &mut self.final_webp)?;
+        assemble_webp(
+            width,
+            height,
+            &self.vp8_frame,
+            alpha_payload,
+            &mut self.final_webp,
+        )?;
 
         Ok(&self.final_webp)
     }
