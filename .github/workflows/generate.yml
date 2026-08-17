@@ -28,10 +28,10 @@ jobs:
         ./target/release/sumi > sumi.log 2>&1 &
         echo $! > sumi.pid
         
-        # Wait up to 30 seconds for sumi to become healthy
+        # Wait for sumi to be healthy
         echo "Waiting for sumi to start..."
         for i in {1..30}; do
-          if curl -s http://127.0.0.1:3000/health > /dev/null; then
+          if curl -s http://127.0.0.1:3000/health > /dev/null 2>&1; then
             echo "sumi is ready and listening on port 3000!"
             break
           fi
@@ -46,32 +46,50 @@ jobs:
     - name: Request random drop
       run: |
         mkdir -p generated
-        CARDS=($(find assets -type f \( -name "*.webp" \) | sed 's|assets/||' | sed 's|\.webp||' | sed 's|\.png||'))
+        
+        # Find all .webp cards in assets folder
+        CARDS=()
+        for f in $(find assets -type f -name "*.webp"); do
+          card_name=$(basename "$f" .webp)
+          CARDS+=("$card_name")
+        done
         
         if [ ${#CARDS[@]} -eq 0 ]; then
           echo "Error: No cards (.webp) found in the assets folder."
           exit 1
         fi
         
+        echo "Found cards: ${CARDS[*]}"
+        
+        # Pick 2 random cards and print numbers
         CARD1=${CARDS[$((RANDOM % ${#CARDS[@]}))]}
         CARD2=${CARDS[$((RANDOM % ${#CARDS[@]}))]}
-        PRINT1=$((1 + RANDOM % 9))
-        PRINT2=$((1 + RANDOM % 9))
+        PRINT1=$((1 + RANDOM % 99))
+        PRINT2=$((1 + RANDOM % 99))
         FILENAME="drop_$(date +%s).webp"
         
-        curl -s -f -o "generated/$FILENAME" "http://localhost:3000/render/drop?left=$CARD1&right=$CARD2&left_print=$PRINT1&right_print=$PRINT2"
+        echo "Rendering drop: left=$CARD1 (#$PRINT1), right=$CARD2 (#$PRINT2)"
         
-        echo "image rendered and saved to generated/$FILENAME"
+        # Perform render request with status code check
+        HTTP_CODE=$(curl -s -w "%{http_code}" -o "generated/$FILENAME" "http://localhost:3000/render/drop?left=$CARD1&right=$CARD2&left_print=$PRINT1&right_print=$PRINT2")
+        
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "Error: Render request failed with HTTP $HTTP_CODE"
+          echo "Server response:"
+          cat "generated/$FILENAME"
+          echo ""
+          echo "=== sumi.log ==="
+          cat sumi.log
+          exit 1
+        fi
+        
+        echo "Success: Image rendered and saved to generated/$FILENAME ($(wc -c < "generated/$FILENAME") bytes)"
 
     - name: Stop sumi server
       if: always()
       run: |
         if [ -f sumi.pid ]; then
-          kill $(cat sumi.pid) || true
-        fi
-        if [ -f sumi.log ]; then
-          echo "=== sumi.log output ==="
-          cat sumi.log
+          kill $(cat sumi.pid) 2>/dev/null || true
         fi
 
     - name: Commit and push image to repo
