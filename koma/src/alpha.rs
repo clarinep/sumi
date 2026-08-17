@@ -17,7 +17,7 @@ pub const ALPH_LOSSLESS_COMPRESSION: u8 = 1;
 /// Top-left (0,0) uses 0 predictor. Row starts (0, y) use pixel above (0, y-1).
 /// All other pixels use left neighbor.
 #[inline]
-pub fn dst_slice.copy_from_slice(src); //(src: &[u8], width: usize, height: usize, dst: &mut [u8]) {
+pub fn filter_alpha_horizontal(src: &[u8], width: usize, height: usize, dst: &mut [u8]) {
     if width == 0 || height == 0 {
         return;
     }
