@@ -173,8 +173,6 @@ pub fn rgba_to_yuv420p(
             let k129 = _mm_set1_epi16(129);
             let k25 = _mm_set1_epi16(25);
             let k128_16 = _mm_set1_epi16(128);
-            let k16_8 = _mm_set1_epi8(16);
-            let zero = _mm_setzero_si128();
 
             while col_x + 7 < width {
                 let idx0 = col_x * 4;
@@ -183,22 +181,6 @@ pub fn rgba_to_yuv420p(
 
                 let p1_0 = _mm_loadu_si128(row1_src.as_ptr().add(idx0) as *const __m128i);
                 let p1_1 = _mm_loadu_si128(row1_src.as_ptr().add(idx0 + 16) as *const __m128i);
-
-                // Unpack to 16-bit
-                let p0_0_lo = _mm_unpacklo_epi8(p0_0, zero);
-                let p0_0_hi = _mm_unpackhi_epi8(p0_0, zero);
-                let p0_1_lo = _mm_unpacklo_epi8(p0_1, zero);
-                let p0_1_hi = _mm_unpackhi_epi8(p0_1, zero);
-
-                // Extract R, G, B for row 0 (8 pixels)
-                // Pixel 0, 1
-                let r0 = _mm_set_epi16(
-                    0, 0, 0, 0,
-                    _mm_extract_epi16(p0_1_hi, 4) as i16,
-                    _mm_extract_epi16(p0_1_lo, 4) as i16,
-                    _mm_extract_epi16(p0_0_hi, 4) as i16,
-                    _mm_extract_epi16(p0_0_lo, 4) as i16,
-                ); // Wait, extract components directly
 
                 let c0_0 = _mm_cvtsi128_si32(p0_0) as u32;
                 let c0_1 = _mm_cvtsi128_si32(_mm_srli_si128(p0_0, 4)) as u32;
@@ -385,89 +367,3 @@ pub fn rgba_to_yuv420p(
     }
 }
 
-_avg1 = (b02 + b03 + b12 + b13 + 2) >> 2;
-            let (u1, v1) = rgb_to_uv(r_avg1, g_avg1, b_avg1);
-            let uv_idx1 = uv_idx0 + 1;
-            u_out[uv_idx1] = u1;
-            v_out[uv_idx1] = v1;
-
-            col_x += 4;
-        }
-
-        // Remainder
-        while col_x < width {
-            let x0 = col_x;
-            let x1 = (col_x + 1).min(width - 1);
-
-            let idx00 = x0 * 4;
-            let idx01 = x1 * 4;
-
-            let (r00, g00, b00) =
-                (row0_src[idx00] as i32, row0_src[idx00 + 1] as i32, row0_src[idx00 + 2] as i32);
-            let (r01, g01, b01) =
-                (row0_src[idx01] as i32, row0_src[idx01 + 1] as i32, row0_src[idx01 + 2] as i32);
-            let (r10, g10, b10) =
-                (row1_src[idx00] as i32, row1_src[idx00 + 1] as i32, row1_src[idx00 + 2] as i32);
-            let (r11, g11, b11) =
-                (row1_src[idx01] as i32, row1_src[idx01 + 1] as i32, row1_src[idx01 + 2] as i32);
-
-            y_out0[x0] = rgb_to_y(r00, g00, b00);
-            if x0 + 1 < width {
-                y_out0[x0 + 1] = rgb_to_y(r01, g01, b01);
-            }
-            y_out1[x0] = rgb_to_y(r10, g10, b10);
-            if x0 + 1 < width {
-                y_out1[x0 + 1] = rgb_to_y(r11, g11, b11);
-            }
-
-            let r_avg = (r00 + r01 + r10 + r11 + 2) >> 2;
-            let g_avg = (g00 + g01 + g10 + g11 + 2) >> 2;
-            let b_avg = (b00 + b01 + b10 + b11 + 2) >> 2;
-
-            let uv_x = col_x / 2;
-            let (u, v) = rgb_to_uv(r_avg, g_avg, b_avg);
-            u_out[uv_x] = u;
-            v_out[uv_x] = v;
-
-            col_x += 2;
-        }
-
-        // Pad horizontal row if padded width > width
-        if pad_width > width {
-            let pad_val0 = y_out0[width - 1];
-            y_out0[width..pad_width].fill(pad_val0);
-            if !y_out1.is_empty() {
-                let pad_val1 = y_out1[width - 1];
-                y_out1[width..pad_width].fill(pad_val1);
-            }
-
-            let uv_w = (width + 1) / 2;
-            let pad_u = u_out[uv_w - 1];
-            let pad_v = v_out[uv_w - 1];
-            u_out[uv_w..uv_stride].fill(pad_u);
-            v_out[uv_w..uv_stride].fill(pad_v);
-        }
-    }
-
-    // Pad vertical rows if padded height > height
-    if pad_height > height {
-        for y in height..pad_height {
-            let src_y = height - 1;
-            let (src, dst) = y_plane.split_at_mut(y * pad_width);
-            dst[..pad_width]
-                .copy_from_slice(&src[src_y * pad_width..src_y * pad_width + pad_width]);
-        }
-        let uv_h = (height + 1) / 2;
-        let pad_uv_h = pad_height / 2;
-        for y in uv_h..pad_uv_h {
-            let src_y = uv_h - 1;
-            let (src_u, dst_u) = u_plane.split_at_mut(y * uv_stride);
-            dst_u[..uv_stride]
-                .copy_from_slice(&src_u[src_y * uv_stride..src_y * uv_stride + uv_stride]);
-
-            let (src_v, dst_v) = v_plane.split_at_mut(y * uv_stride);
-            dst_v[..uv_stride]
-                .copy_from_slice(&src_v[src_y * uv_stride..src_y * uv_stride + uv_stride]);
-        }
-    }
-}
