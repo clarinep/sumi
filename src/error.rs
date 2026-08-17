@@ -58,11 +58,12 @@ impl IntoResponse for Error {
                         right
                     );
                 } else {
-                    tracing::debug!(
-                        "render failed\n      left: {}\n      right: {}\n      reason: {}",
+                    tracing::error!(
+                        "render failed ({}): {}\n      left: {}\n      right: {}",
+                        status,
+                        msg,
                         left,
-                        right,
-                        msg
+                        right
                     );
                 }
 
