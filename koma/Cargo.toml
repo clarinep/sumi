@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 bytes = { version = "1.12.1", default-features = false }
 crossbeam-queue = "0.3.13"
-mimalloc = { version = "0.1", default-features = false }
+mimalloc = { version = "0.1.52", default-features = false }
 
 [profile.release]
 lto = "fat"
