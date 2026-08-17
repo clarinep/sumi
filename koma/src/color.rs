@@ -5,6 +5,7 @@
 //! and zero heap allocations.
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unused_imports)]
 use std::arch::x86_64::*;
 
 #[inline(always)]
@@ -52,8 +53,14 @@ pub fn rgba_to_yuv420p(
         let row0_src = &rgba[y0 * row_stride..(y0 + 1) * row_stride];
         let row1_src = &rgba[y1 * row_stride..(y1 + 1) * row_stride];
 
-        let y_out0 = &mut y_plane[y0 * pad_width..y0 * pad_width + pad_width];
-        let y_out1 = &mut y_plane[y1 * pad_width..y1 * pad_width + pad_width];
+        let (y_out0, y_out1) = if y0 == y1 {
+            let slice = &mut y_plane[y0 * pad_width..y0 * pad_width + pad_width];
+            // If height is 1, y0 == y1
+            (slice, &mut [][..])
+        } else {
+            let (top, bottom) = y_plane.split_at_mut(y1 * pad_width);
+            (&mut top[y0 * pad_width..y0 * pad_width + pad_width], &mut bottom[..pad_width])
+        };
         let u_out = &mut u_plane[(row_y / 2) * uv_stride..(row_y / 2) * uv_stride + uv_stride];
         let v_out = &mut v_plane[(row_y / 2) * uv_stride..(row_y / 2) * uv_stride + uv_stride];
 
@@ -285,9 +292,11 @@ pub fn rgba_to_yuv420p(
         // Pad horizontal row if padded width > width
         if pad_width > width {
             let pad_val0 = y_out0[width - 1];
-            let pad_val1 = y_out1[width - 1];
             y_out0[width..pad_width].fill(pad_val0);
-            y_out1[width..pad_width].fill(pad_val1);
+            if !y_out1.is_empty() {
+                let pad_val1 = y_out1[width - 1];
+                y_out1[width..pad_width].fill(pad_val1);
+            }
 
             let uv_w = (width + 1) / 2;
             let pad_u = u_out[uv_w - 1];
@@ -316,3 +325,4 @@ pub fn rgba_to_yuv420p(
         }
     }
 }
+
