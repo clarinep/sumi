@@ -47,9 +47,6 @@ pub use riff::assemble_webp;
 #[doc(inline)]
 pub use vp8::{encode_lossy_frame, EncoderConfig, EncoderConfigBuilder};
 
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 /// Encodes an RGBA byte slice into a lossy WebP image.
 ///
 /// This function retrieves a scratch buffer from the global memory pool to avoid
