@@ -8,6 +8,7 @@
   bytes              = "1.12.1"
   crossbeam-queue    = "0.3.13"
   fontdue            = "0.9.3"
+  koma               = { path = "../koma" }
   mimalloc           = "0.1.52"
   dashmap            = "6.2.1"
   ahash              = "0.8.12"
