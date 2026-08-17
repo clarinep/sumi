@@ -12,6 +12,7 @@ tracing = "0.1.44"
 lto = "fat"
 opt-level = 3
 codegen-units = 1
+panic = "abort"
 strip = "symbols"
 
 [profile.dev]
