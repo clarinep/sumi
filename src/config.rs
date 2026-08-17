@@ -14,8 +14,21 @@ impl Config {
         // for now we will use our default path and default port 8888
         let home = env::var_os("USERPROFILE").or_else(|| env::var_os("HOME"));
         let default_cards_dir = home.map(PathBuf::from).map_or_else(
-            || PathBuf::from("assets/cards"),
-            |p| p.join("Documents").join("kizunari").join("cards"),
+            || {
+                if PathBuf::from("assets").exists() && !PathBuf::from("assets/cards").exists() {
+                    PathBuf::from("assets")
+                } else {
+                    PathBuf::from("assets/cards")
+                }
+            },
+            |p| {
+                let p_cards = p.join("Documents").join("kizunari").join("cards");
+                if !p_cards.exists() && PathBuf::from("assets").exists() {
+                    PathBuf::from("assets")
+                } else {
+                    p_cards
+                }
+            },
         );
 
         let cards_dir = env::var("CARDS_DIR").map_or_else(|_| default_cards_dir, PathBuf::from);
@@ -23,7 +36,7 @@ impl Config {
         let port = match env::var("PORT") {
             Ok(s) => s.parse().map_err(|_| "PORT is not a valid u16 port number".to_string())?,
             Err(env::VarError::NotPresent) => 8888,
-            Err(e) => return Err(format!("failed to read PORT env ({e})")),
+            Err(e) => return Err(format!("failed to read PORT env ({})", e)),
         };
 
         let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
