@@ -123,14 +123,14 @@ pub(super) fn create_drop_image(
         (right_card_x + right_width).cast_signed() - right_padding - right_print_width;
     let print_y = total_height.cast_signed() - TEXT_SIZE as i32 - TEXT_PADDING_FROM_BOTTOM;
 
-    draw_print_number(
+    let _ = draw_print_number(
         total_width,
         total_height,
         &mut buffer[..required_len],
         left_print,
         Point::new(left_print_x, print_y),
     );
-    draw_print_number(
+    let _ = draw_print_number(
         total_width,
         total_height,
         &mut buffer[..required_len],
@@ -140,11 +140,6 @@ pub(super) fn create_drop_image(
 
     let print_time = start_print.elapsed();
     let start_encode = Instant::now();
-
-    // Force alpha channel to 255 to ensure opaque background and cards
-    for chunk in buffer[..required_len].chunks_exact_mut(4) {
-        chunk[3] = 255;
-    }
 
     let result = encode_webp(total_width, total_height, &buffer[..required_len]);
     let encode_time = start_encode.elapsed();
