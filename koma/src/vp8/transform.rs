@@ -12,13 +12,15 @@ use std::arch::aarch64::*;
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
 unsafe fn _mm_mullo_epi32_portable(a: __m128i, b: __m128i) -> __m128i {
-    let mul02 = _mm_mul_epu32(a, b);
-    let a_hi = _mm_srli_si128(a, 4);
-    let b_hi = _mm_srli_si128(b, 4);
-    let mul13 = _mm_mul_epu32(a_hi, b_hi);
-    let unpack_lo = _mm_unpacklo_epi32(mul02, mul13);
-    let unpack_hi = _mm_unpackhi_epi32(mul02, mul13);
-    _mm_unpacklo_epi64(unpack_lo, unpack_hi)
+    unsafe {
+        let mul02 = _mm_mul_epu32(a, b);
+        let a_hi = _mm_srli_si128(a, 4);
+        let b_hi = _mm_srli_si128(b, 4);
+        let mul13 = _mm_mul_epu32(a_hi, b_hi);
+        let unpack_lo = _mm_unpacklo_epi32(mul02, mul13);
+        let unpack_hi = _mm_unpackhi_epi32(mul02, mul13);
+        _mm_unpacklo_epi64(unpack_lo, unpack_hi)
+    }
 }
 
 /// 4x4 Forward Discrete Cosine Transform (FDCT) according to RFC 6386 Section 14.3.
