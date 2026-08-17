@@ -13,8 +13,36 @@ use crate::riff::assemble_webp;
 use crate::vp8::{encode_lossy_frame, EncoderConfig};
 
 /// Global lock-free pool of pre-allocated [`EncoderScratch`] buffers.
-pub static ENCODER_SCRATCH_POOL: LazyLock<ArrayQueue<EncoderScratch>> =
-    LazyLock::new(|| ArrayQueue::new(16));
+pub static ENCODER_SCRATCH_POOL: LazyLock<ScratchPool> =
+    LazyLock::new(|| ScratchPool::new(16));
+
+/// A lock-free pool of [`EncoderScratch`] instances.
+#[derive(Debug)]
+pub struct ScratchPool {
+    queue: ArrayQueue<EncoderScratch>,
+}
+
+impl ScratchPool {
+    /// Creates a new pool with the given capacity.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            queue: ArrayQueue::new(capacity),
+        }
+    }
+
+    /// Retrieves a scratch buffer from the pool or allocates a new one if exhausted.
+    pub fn get(&self) -> ScratchGuard {
+        let scratch = self.queue.pop().unwrap_or_else(EncoderScratch::new);
+        ScratchGuard {
+            scratch: Some(scratch),
+        }
+    }
+
+    /// Returns a scratch buffer back to the pool.
+    pub fn recycle(&self, scratch: EncoderScratch) {
+        let _ = self.queue.push(scratch);
+    }
+}
 
 /// Pre-allocated working buffers matching canvas dimensions.
 ///
@@ -186,17 +214,7 @@ impl std::ops::DerefMut for ScratchGuard {
 impl Drop for ScratchGuard {
     fn drop(&mut self) {
         if let Some(scratch) = self.scratch.take() {
-            let _ = ENCODER_SCRATCH_POOL.push(scratch);
-        }
-    }
-}
-
-impl ArrayQueue<EncoderScratch> {
-    /// Retrieves a scratch buffer from the queue or allocates a new one if exhausted.
-    pub fn get(&self, _w: usize, _h: usize) -> ScratchGuard {
-        let scratch = self.pop().unwrap_or_else(EncoderScratch::new);
-        ScratchGuard {
-            scratch: Some(scratch),
+            ENCODER_SCRATCH_POOL.recycle(scratch);
         }
     }
 }
