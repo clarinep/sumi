@@ -150,14 +150,14 @@ pub fn extract_and_compress_alpha(
             let p2 = _mm_loadu_si128(src_ptr.add(32) as *const __m128i);
             let p3 = _mm_loadu_si128(src_ptr.add(48) as *const __m128i);
 
-            // Extract alpha bytes (byte 3 of each 4-byte pixel)
+            // Extract alpha bytes (byte 3 of each 4-byte pixel in little-endian order)
             let a0 = _mm_srli_epi32(p0, 24);
             let a1 = _mm_srli_epi32(p1, 24);
             let a2 = _mm_srli_epi32(p2, 24);
             let a3 = _mm_srli_epi32(p3, 24);
 
-            let a01 = _mm_packs_epi32(a0, a1);
-            let a23 = _mm_packs_epi32(a2, a3);
+            let a01 = _mm_packus_epi32(a0, a1);
+            let a23 = _mm_packus_epi32(a2, a3);
             let a_all = _mm_packus_epi16(a01, a23);
 
             _mm_storeu_si128(dst_slice.as_mut_ptr().add(i) as *mut __m128i, a_all);
