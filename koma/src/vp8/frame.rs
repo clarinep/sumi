@@ -14,6 +14,9 @@ use crate::vp8::transform::{fdct_4x4, forward_wht_4x4, idct_4x4, inverse_wht_4x4
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
+
 /// High-performance reciprocal quantizer eliminating CPU division pipeline stalls (`IDIV`).
 ///
 /// Converts 15–74 cycle hardware integer divisions into 1-cycle integer multiplications
@@ -70,6 +73,13 @@ pub fn quality_to_q_index(quality: f32) -> usize {
 #[inline(always)]
 fn is_flat_16(slice: &[u8], target: u8) -> bool {
     if slice.len() < 16 { return false; }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let chunk = vld1q_u8(slice.as_ptr());
+        let target_vec = vdupq_n_u8(target);
+        let eq = vceqq_u8(chunk, target_vec);
+        vminvq_u8(eq) == 0xFF
+    }
     #[cfg(target_arch = "x86_64")]
     unsafe {
         let chunk = _mm_loadu_si128(slice.as_ptr() as *const __m128i);
@@ -77,7 +87,7 @@ fn is_flat_16(slice: &[u8], target: u8) -> bool {
         let eq = _mm_cmpeq_epi8(chunk, target_vec);
         _mm_movemask_epi8(eq) == 0xFFFF
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
         slice[0] == target
             && slice[1] == target
@@ -111,6 +121,11 @@ fn is_flat_8(slice: &[u8], target: u8) -> bool {
 #[inline(always)]
 fn sum_bytes_8(slice: &[u8]) -> u32 {
     if slice.len() < 8 { return slice.iter().copied().map(u32::from).sum(); }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let chunk = vld1_u8(slice.as_ptr());
+        vaddlv_u8(chunk) as u32
+    }
     #[cfg(target_arch = "x86_64")]
     unsafe {
         let chunk_u64 = std::ptr::read_unaligned(slice.as_ptr() as *const u64);
@@ -119,7 +134,7 @@ fn sum_bytes_8(slice: &[u8]) -> u32 {
         let sad = _mm_sad_epu8(vec, zero);
         _mm_cvtsi128_si32(sad) as u32
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
         slice[..8].iter().map(|&x| x as u32).sum()
     }
@@ -129,6 +144,11 @@ fn sum_bytes_8(slice: &[u8]) -> u32 {
 #[inline(always)]
 fn sum_bytes_16(slice: &[u8]) -> u32 {
     if slice.len() < 16 { return slice.iter().copied().map(u32::from).sum(); }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let chunk = vld1q_u8(slice.as_ptr());
+        vaddlvq_u8(chunk) as u32
+    }
     #[cfg(target_arch = "x86_64")]
     unsafe {
         let chunk = _mm_loadu_si128(slice.as_ptr() as *const __m128i);
@@ -138,15 +158,208 @@ fn sum_bytes_16(slice: &[u8]) -> u32 {
         let hi = _mm_extract_epi16(sad, 4) as u32;
         lo + hi
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
         slice.iter().map(|&x| x as u32).sum()
+    }
+}
+
+/// Subtracts DC predictor from 4x4 block pixels into 16 signed 16-bit residuals using SIMD.
+#[inline(always)]
+fn sub_dc_4x4(src: &[u8], offset: usize, stride: usize, dc: i16, out: &mut [i16; 16]) {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let dc_vec = vdupq_n_s16(dc);
+        let ptr = src.as_ptr().add(offset);
+        
+        let r0 = (ptr as *const u32).read_unaligned();
+        let r1 = (ptr.add(stride) as *const u32).read_unaligned();
+        let r2 = (ptr.add(stride * 2) as *const u32).read_unaligned();
+        let r3 = (ptr.add(stride * 3) as *const u32).read_unaligned();
+        
+        let u8_0 = vreinterpret_u8_u32(vdup_n_u32(r0));
+        let u8_1 = vreinterpret_u8_u32(vdup_n_u32(r1));
+        let u8_2 = vreinterpret_u8_u32(vdup_n_u32(r2));
+        let u8_3 = vreinterpret_u8_u32(vdup_n_u32(r3));
+
+        let u8_01 = vcombine_u8(u8_0, u8_1);
+        let u8_23 = vcombine_u8(u8_2, u8_3);
+        
+        let u16_01 = vmovl_u8(vget_low_u8(u8_01));
+        let u16_23 = vmovl_u8(vget_low_u8(u8_23));
+        
+        let s16_01 = vsubq_s16(vreinterpretq_s16_u16(u16_01), dc_vec);
+        let s16_23 = vsubq_s16(vreinterpretq_s16_u16(u16_23), dc_vec);
+        
+        vst1q_s16(out.as_mut_ptr(), s16_01);
+        vst1q_s16(out.as_mut_ptr().add(8), s16_23);
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let dc_vec = _mm_set1_epi16(dc);
+        let ptr = src.as_ptr().add(offset);
+        
+        let r0 = (ptr as *const u32).read_unaligned();
+        let r1 = (ptr.add(stride) as *const u32).read_unaligned();
+        let r2 = (ptr.add(stride * 2) as *const u32).read_unaligned();
+        let r3 = (ptr.add(stride * 3) as *const u32).read_unaligned();
+        
+        let v01 = _mm_set_epi32(0, 0, r1 as i32, r0 as i32);
+        let v23 = _mm_set_epi32(0, 0, r3 as i32, r2 as i32);
+        let zero = _mm_setzero_si128();
+        
+        let s16_01 = _mm_sub_epi16(_mm_unpacklo_epi8(v01, zero), dc_vec);
+        let s16_23 = _mm_sub_epi16(_mm_unpacklo_epi8(v23, zero), dc_vec);
+        
+        _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, s16_01);
+        _mm_storeu_si128(out.as_mut_ptr().add(8) as *mut __m128i, s16_23);
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        for y in 0..4 {
+            let s_idx = offset + y * stride;
+            let r_row = y * 4;
+            out[r_row] = (src[s_idx] as i16) - dc;
+            out[r_row + 1] = (src[s_idx + 1] as i16) - dc;
+            out[r_row + 2] = (src[s_idx + 2] as i16) - dc;
+            out[r_row + 3] = (src[s_idx + 3] as i16) - dc;
+        }
+    }
+}
+
+/// Adds DC predictor to 16 residual coefficients, clamps to [0, 255] and stores with SIMD.
+#[inline(always)]
+fn add_dc_and_clamp_4x4(res: &[i16; 16], dc: i16, dst: &mut [u8], dst_offset: usize, stride: usize) {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let dc_vec = vdupq_n_s16(dc);
+        let res0 = vld1q_s16(res.as_ptr());
+        let res1 = vld1q_s16(res.as_ptr().add(8));
+        let sum0 = vaddq_s16(res0, dc_vec);
+        let sum1 = vaddq_s16(res1, dc_vec);
+        let u8_0 = vqmovun_s16(sum0);
+        let u8_1 = vqmovun_s16(sum1);
+        
+        let ptr = dst.as_mut_ptr().add(dst_offset);
+        (ptr as *mut u32).write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_0), 0));
+        (ptr.add(stride) as *mut u32).write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_0), 1));
+        (ptr.add(stride * 2) as *mut u32).write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_1), 0));
+        (ptr.add(stride * 3) as *mut u32).write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_1), 1));
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let dc_vec = _mm_set1_epi16(dc);
+        let res0 = _mm_loadu_si128(res.as_ptr() as *const __m128i);
+        let res1 = _mm_loadu_si128(res.as_ptr().add(8) as *const __m128i);
+        let sum0 = _mm_add_epi16(res0, dc_vec);
+        let sum1 = _mm_add_epi16(res1, dc_vec);
+        let clamped = _mm_packus_epi16(sum0, sum1);
+        
+        let ptr = dst.as_mut_ptr().add(dst_offset);
+        let r0 = _mm_cvtsi128_si32(clamped) as u32;
+        let r1 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 4)) as u32;
+        let r2 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 8)) as u32;
+        let r3 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 12)) as u32;
+        
+        (ptr as *mut u32).write_unaligned(r0);
+        (ptr.add(stride) as *mut u32).write_unaligned(r1);
+        (ptr.add(stride * 2) as *mut u32).write_unaligned(r2);
+        (ptr.add(stride * 3) as *mut u32).write_unaligned(r3);
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        for y in 0..4 {
+            let r_idx = dst_offset + y * stride;
+            let r_row = y * 4;
+            dst[r_idx] = (dc + res[r_row]).clamp(0, 255) as u8;
+            dst[r_idx + 1] = (dc + res[r_row + 1]).clamp(0, 255) as u8;
+            dst[r_idx + 2] = (dc + res[r_row + 2]).clamp(0, 255) as u8;
+            dst[r_idx + 3] = (dc + res[r_row + 3]).clamp(0, 255) as u8;
+        }
+    }
+}
+
+/// Quantizes and dequantizes 16 coefficients with reciprocal arithmetic.
+#[inline(always)]
+fn quantize_dequantize_block(
+    coeffs: &[i16; 16],
+    q_dc: &FastQuantizer,
+    q_ac: &FastQuantizer,
+    out_q: &mut [i16; 16],
+    out_deq: &mut [i16; 16],
+) {
+    for i in 0..16 {
+        let quantizer = if i == 0 { q_dc } else { q_ac };
+        out_q[i] = quantizer.quantize(coeffs[i]);
+        out_deq[i] = quantizer.dequantize(out_q[i]);
+    }
+}
+
+/// Quantizes and dequantizes 15 AC coefficients (indices 1..16) for Luma subblock.
+#[inline(always)]
+fn quantize_dequantize_y1_ac(
+    coeffs: &[i16; 16],
+    q_ac: &FastQuantizer,
+    rec_dc: i16,
+    out_q: &mut [i16; 16],
+    out_deq: &mut [i16; 16],
+) {
+    out_q[0] = 0;
+    out_deq[0] = rec_dc;
+    for i in 1..16 {
+        let q_val = q_ac.quantize(coeffs[i]);
+        out_q[i] = q_val;
+        out_deq[i] = q_ac.dequantize(q_val);
     }
 }
 
 /// Encodes quantized AC/DC transform coefficients into the arithmetic boolean bitstream.
 #[inline(always)]
 pub fn encode_coeffs_block(coeffs: &[i16; 16], start_idx: usize, bool_coder: &mut BoolEncoder) {
+    // Fast SIMD check if all coefficients from start_idx to 15 are zero
+    let is_all_zero = {
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            let v0 = vld1q_s16(coeffs.as_ptr());
+            let v1 = vld1q_s16(coeffs.as_ptr().add(8));
+            let zero = vdupq_n_s16(0);
+            let eq0 = vceqq_s16(v0, zero);
+            let eq1 = vceqq_s16(v1, zero);
+            if start_idx == 0 {
+                let and = vandq_u16(eq0, eq1);
+                vminvq_u16(and) == 0xFFFF
+            } else {
+                let eq0_masked = vsetq_lane_u16(0xFFFF, eq0, 0);
+                let and = vandq_u16(eq0_masked, eq1);
+                vminvq_u16(and) == 0xFFFF
+            }
+        }
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            let v0 = _mm_loadu_si128(coeffs.as_ptr() as *const __m128i);
+            let v1 = _mm_loadu_si128(coeffs.as_ptr().add(8) as *const __m128i);
+            let zero = _mm_setzero_si128();
+            let eq0 = _mm_cmpeq_epi16(v0, zero);
+            let eq1 = _mm_cmpeq_epi16(v1, zero);
+            let mask0 = _mm_movemask_epi8(eq0);
+            let mask1 = _mm_movemask_epi8(eq1);
+            if start_idx == 0 {
+                mask0 == 0xFFFF && mask1 == 0xFFFF
+            } else {
+                (mask0 | 0x0003) == 0xFFFF && mask1 == 0xFFFF
+            }
+        }
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            coeffs[start_idx..].iter().all(|&c| c == 0)
+        }
+    };
+
+    if is_all_zero {
+        bool_coder.put_bit(false, PROB_EOB);
+        return;
+    }
+
     let mut last_nz = -1i32;
     for i in (start_idx..16).rev() {
         if coeffs[ZIGZAG[i]] != 0 {
@@ -379,24 +592,14 @@ pub fn encode_lossy_frame(
                     let blk_x = (blk & 3) * 4;
                     let blk_y = (blk >> 2) * 4;
                     let mut res = [0i16; 16];
-                    for y in 0..4 {
-                        let s_idx = src_y_off + (blk_y + y) * y_stride + blk_x;
-                        let r_row = y * 4;
-                        res[r_row] = (y_plane[s_idx] as i16) - dc_val_i16;
-                        res[r_row + 1] = (y_plane[s_idx + 1] as i16) - dc_val_i16;
-                        res[r_row + 2] = (y_plane[s_idx + 2] as i16) - dc_val_i16;
-                        res[r_row + 3] = (y_plane[s_idx + 3] as i16) - dc_val_i16;
-                    }
+                    let s_idx = src_y_off + blk_y * y_stride + blk_x;
+                    sub_dc_4x4(y_plane, s_idx, y_stride, dc_val_i16, &mut res);
                     let has_diff = fdct_4x4(&res, &mut sub_coeffs[blk]);
                     y_dc_coeffs[blk] = if has_diff { sub_coeffs[blk][0] } else { 0 };
                 }
 
                 forward_wht_4x4(&y_dc_coeffs, &mut y_wht_coeffs);
-                for i in 0..16 {
-                    let quantizer = if i == 0 { &q_y2_dc } else { &q_y2_ac };
-                    y_q_wht[i] = quantizer.quantize(y_wht_coeffs[i]);
-                    y_deq_wht[i] = quantizer.dequantize(y_q_wht[i]);
-                }
+                quantize_dequantize_block(&y_wht_coeffs, &q_y2_dc, &q_y2_ac, &mut y_q_wht, &mut y_deq_wht);
                 inverse_wht_4x4(&y_deq_wht, &mut y_rec_dc);
 
                 encode_coeffs_block(&y_q_wht, 0, &mut bool_coder);
@@ -405,29 +608,15 @@ pub fn encode_lossy_frame(
                     let blk_x = (blk & 3) * 4;
                     let blk_y = (blk >> 2) * 4;
 
-                    sub_coeffs[blk][0] = 0;
-                    for i in 1..16 {
-                        sub_q[blk][i] = q_y1_ac.quantize(sub_coeffs[blk][i]);
-                    }
-                    encode_coeffs_block(&sub_q[blk], 1, &mut bool_coder);
-
                     let mut dequant = [0i16; 16];
-                    for i in 1..16 {
-                        dequant[i] = q_y1_ac.dequantize(sub_q[blk][i]);
-                    }
-                    dequant[0] = y_rec_dc[blk];
+                    quantize_dequantize_y1_ac(&sub_coeffs[blk], &q_y1_ac, y_rec_dc[blk], &mut sub_q[blk], &mut dequant);
+                    encode_coeffs_block(&sub_q[blk], 1, &mut bool_coder);
 
                     let mut rec_res = [0i16; 16];
                     idct_4x4(&dequant, &mut rec_res);
 
-                    for y in 0..4 {
-                        let r_idx = (mb_y_px + blk_y + y) * y_stride + (mb_x_px + blk_x);
-                        let r_row = y * 4;
-                        recon_y[r_idx] = (dc_val_i16 + rec_res[r_row]).clamp(0, 255) as u8;
-                        recon_y[r_idx + 1] = (dc_val_i16 + rec_res[r_row + 1]).clamp(0, 255) as u8;
-                        recon_y[r_idx + 2] = (dc_val_i16 + rec_res[r_row + 2]).clamp(0, 255) as u8;
-                        recon_y[r_idx + 3] = (dc_val_i16 + rec_res[r_row + 3]).clamp(0, 255) as u8;
-                    }
+                    let r_idx = (mb_y_px + blk_y) * y_stride + (mb_x_px + blk_x);
+                    add_dc_and_clamp_4x4(&rec_res, dc_val_i16, recon_y, r_idx, y_stride);
                 }
             }
 
@@ -468,14 +657,8 @@ pub fn encode_lossy_frame(
                         let blk_y = (blk >> 1) * 4;
 
                         let mut res = [0i16; 16];
-                        for y in 0..4 {
-                            let s_idx = s_off + (blk_y + y) * uv_stride + blk_x;
-                            let r_row = y * 4;
-                            res[r_row] = (src_p[s_idx] as i16) - dc_val_i16;
-                            res[r_row + 1] = (src_p[s_idx + 1] as i16) - dc_val_i16;
-                            res[r_row + 2] = (src_p[s_idx + 2] as i16) - dc_val_i16;
-                            res[r_row + 3] = (src_p[s_idx + 3] as i16) - dc_val_i16;
-                        }
+                        let s_idx = s_off + blk_y * uv_stride + blk_x;
+                        sub_dc_4x4(src_p, s_idx, uv_stride, dc_val_i16, &mut res);
 
                         let mut coeffs = [0i16; 16];
                         let mut q_coeffs = [0i16; 16];
@@ -483,23 +666,13 @@ pub fn encode_lossy_frame(
                         let mut rec_res = [0i16; 16];
 
                         fdct_4x4(&res, &mut coeffs);
-                        for i in 0..16 {
-                            let quantizer = if i == 0 { &q_uv_dc } else { &q_uv_ac };
-                            q_coeffs[i] = quantizer.quantize(coeffs[i]);
-                            dequant[i] = quantizer.dequantize(q_coeffs[i]);
-                        }
+                        quantize_dequantize_block(&coeffs, &q_uv_dc, &q_uv_ac, &mut q_coeffs, &mut dequant);
                         encode_coeffs_block(&q_coeffs, 0, &mut bool_coder);
 
                         idct_4x4(&dequant, &mut rec_res);
 
-                        for y in 0..4 {
-                            let r_idx = (uv_y_px + blk_y + y) * uv_stride + (uv_x_px + blk_x);
-                            let r_row = y * 4;
-                            recon_p[r_idx] = (dc_val_i16 + rec_res[r_row]).clamp(0, 255) as u8;
-                            recon_p[r_idx + 1] = (dc_val_i16 + rec_res[r_row + 1]).clamp(0, 255) as u8;
-                            recon_p[r_idx + 2] = (dc_val_i16 + rec_res[r_row + 2]).clamp(0, 255) as u8;
-                            recon_p[r_idx + 3] = (dc_val_i16 + rec_res[r_row + 3]).clamp(0, 255) as u8;
-                        }
+                        let r_idx = (uv_y_px + blk_y) * uv_stride + (uv_x_px + blk_x);
+                        add_dc_and_clamp_4x4(&rec_res, dc_val_i16, recon_p, r_idx, uv_stride);
                     }
                 }
             }
