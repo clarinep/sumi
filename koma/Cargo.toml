@@ -11,7 +11,6 @@ crossbeam-queue = "0.3.13"
 lto = "fat"
 opt-level = 3
 codegen-units = 1
-panic = "abort"
 strip = "symbols"
 
 [profile.dev]
