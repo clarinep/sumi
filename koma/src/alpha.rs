@@ -17,7 +17,7 @@ pub const ALPH_LOSSLESS_COMPRESSION: u8 = 1;
 /// Top-left (0,0) uses 0 predictor. Row starts (0, y) use pixel above (0, y-1).
 /// All other pixels use left neighbor.
 #[inline]
-pub fn filter_alpha_horizontal(src: &[u8], width: usize, height: usize, dst: &mut [u8]) {
+pub fn dst_slice.copy_from_slice(src); //(src: &[u8], width: usize, height: usize, dst: &mut [u8]) {
     if width == 0 || height == 0 {
         return;
     }
@@ -97,7 +97,10 @@ pub fn extract_and_compress_alpha(
 
             // Fast opacity check
             if !has_transparency {
-                let check = _mm_and_si128(_mm_and_si128(p0, p1), _mm_and_si128(p2, p3));
+                let check = _mm_and_si128(
+                    _mm_and_si128(p0, p1),
+                    _mm_and_si128(p2, p3),
+                );
                 let and_mask = _mm_and_si128(check, mask_opaque);
                 let eq = _mm_cmpeq_epi32(and_mask, mask_opaque);
                 if _mm_movemask_epi8(eq) != 0xFFFF {
@@ -127,23 +130,18 @@ pub fn extract_and_compress_alpha(
     alph_chunk.clear();
     alph_chunk.reserve(1 + total_pixels);
 
-    // 2. Format WebP ALPH chunk payload (RFC standard: 1 header byte + filtered alpha plane)
+    // 2. Format WebP ALPH chunk payload (RFC standard: 1 header byte + raw alpha plane)
     // Bits 0-1: Preprocessing (0 = None)
-    // Bits 2-3: Filtering (1 = Horizontal Filter)
+    // Bits 2-3: Filtering (0 = None)
     // Bits 4-5: Compression (0 = Uncompressed)
-    let header_byte: u8 = (ALPH_FILTER_HORIZONTAL << 2) | ALPH_NO_COMPRESSION;
+    let header_byte: u8 = (ALPH_FILTER_NONE << 2) | ALPH_NO_COMPRESSION;
     alph_chunk.push(header_byte);
 
     let start_len = alph_chunk.len();
     alph_chunk.resize(start_len + total_pixels, 0);
 
-    // Apply horizontal spatial filtering directly into the destination buffer
-    filter_alpha_horizontal(
-        &alpha_plane[..total_pixels],
-        width,
-        height,
-        &mut alph_chunk[start_len..start_len + total_pixels],
-    );
+    // Uncompressed alpha must NOT be filtered. Copy directly.
+    alph_chunk[start_len..start_len + total_pixels].copy_from_slice(&alpha_plane[..total_pixels]);
 
     true
 }
