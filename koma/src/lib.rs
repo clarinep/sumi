@@ -97,7 +97,7 @@ pub fn encode_rgba_webp(
     rgba: &[u8],
     config: &EncoderConfig,
 ) -> Result<bytes::Bytes> {
-    let mut scratch = ENCODER_SCRATCH_POOL.get(width as usize, height as usize);
+    let mut scratch = ENCODER_SCRATCH_POOL.get();
     let output = scratch.encode_rgba(width, height, rgba, config)?;
     Ok(bytes::Bytes::copy_from_slice(output))
 }
