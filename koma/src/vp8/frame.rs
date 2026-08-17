@@ -69,6 +69,7 @@ pub fn quality_to_q_index(quality: f32) -> usize {
 /// Checks if 16 contiguous bytes in memory match a target constant byte using SIMD.
 #[inline(always)]
 fn is_flat_16(slice: &[u8], target: u8) -> bool {
+    if slice.len() < 16 { return false; }
     #[cfg(target_arch = "x86_64")]
     unsafe {
         let chunk = _mm_loadu_si128(slice.as_ptr() as *const __m128i);
@@ -100,14 +101,16 @@ fn is_flat_16(slice: &[u8], target: u8) -> bool {
 /// Checks if 8 contiguous bytes in memory match a target constant byte.
 #[inline(always)]
 fn is_flat_8(slice: &[u8], target: u8) -> bool {
+    if slice.len() < 8 { return false; }
     let target_u64 = u64::from_ne_bytes([target; 8]);
-    let chunk_u64 = u64::from_ne_bytes(slice[..8].try_into().unwrap());
+    let chunk_u64 = u64::from_ne_bytes(slice[..8].try_into().unwrap_or([0; 8]));
     chunk_u64 == target_u64
 }
 
 /// Fast sum of 8 unsigned bytes using SIMD SAD or 64-bit word operations.
 #[inline(always)]
 fn sum_bytes_8(slice: &[u8]) -> u32 {
+    if slice.len() < 8 { return slice.iter().copied().map(u32::from).sum(); }
     #[cfg(target_arch = "x86_64")]
     unsafe {
         let chunk_u64 = std::ptr::read_unaligned(slice.as_ptr() as *const u64);
@@ -125,6 +128,7 @@ fn sum_bytes_8(slice: &[u8]) -> u32 {
 /// Fast sum of 16 unsigned bytes using SIMD SAD (Sum of Absolute Differences against zero).
 #[inline(always)]
 fn sum_bytes_16(slice: &[u8]) -> u32 {
+    if slice.len() < 16 { return slice.iter().copied().map(u32::from).sum(); }
     #[cfg(target_arch = "x86_64")]
     unsafe {
         let chunk = _mm_loadu_si128(slice.as_ptr() as *const __m128i);
