@@ -38,6 +38,7 @@ pub fn assemble_webp(
     }
 
     if total_body_size > u32::MAX as usize - 16 {
+        tracing::error!("encode_rgba failed: container size overflow");
         return Err(KomaError::EncodeFailure("container size overflow"));
     }
 
