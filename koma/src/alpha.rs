@@ -115,77 +115,12 @@ pub fn extract_and_compress_alpha(
     let dst_slice = &mut alpha_plane[..total_pixels];
     let mut has_transparency = false;
 
-    let mut i = 0;
-
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        let opaque_mask = vdupq_n_u8(255);
-        // Process 16 pixels (64 RGBA bytes) per iteration using NEON 4-lane deinterleaving
-        while i + 15 < total_pixels {
-            let src_ptr = rgba.as_ptr().add(i * 4);
-            let rgba_vec = vld4q_u8(src_ptr);
-            let alpha_vec = rgba_vec.3;
-
-            vst1q_u8(dst_slice.as_mut_ptr().add(i), alpha_vec);
-
-            if !has_transparency {
-                let eq = vceqq_u8(alpha_vec, opaque_mask);
-                if vminvq_u8(eq) != 255 {
-                    has_transparency = true;
-                }
-            }
-
-            i += 16;
-        }
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        let mask_opaque = _mm_set1_epi32(0xFF000000u32 as i32);
-        // Process 16 pixels (64 RGBA bytes) per iteration
-        while i + 15 < total_pixels {
-            let src_ptr = rgba.as_ptr().add(i * 4);
-            let p0 = _mm_loadu_si128(src_ptr as *const __m128i);
-            let p1 = _mm_loadu_si128(src_ptr.add(16) as *const __m128i);
-            let p2 = _mm_loadu_si128(src_ptr.add(32) as *const __m128i);
-            let p3 = _mm_loadu_si128(src_ptr.add(48) as *const __m128i);
-
-            // Extract alpha bytes (byte 3 of each 4-byte pixel in little-endian order)
-            let a0 = _mm_srli_epi32(p0, 24);
-            let a1 = _mm_srli_epi32(p1, 24);
-            let a2 = _mm_srli_epi32(p2, 24);
-            let a3 = _mm_srli_epi32(p3, 24);
-
-            let a01 = _mm_packus_epi32(a0, a1);
-            let a23 = _mm_packus_epi32(a2, a3);
-            let a_all = _mm_packus_epi16(a01, a23);
-
-            _mm_storeu_si128(dst_slice.as_mut_ptr().add(i) as *mut __m128i, a_all);
-
-            if !has_transparency {
-                let check = _mm_and_si128(
-                    _mm_and_si128(p0, p1),
-                    _mm_and_si128(p2, p3),
-                );
-                let and_mask = _mm_and_si128(check, mask_opaque);
-                let eq = _mm_cmpeq_epi32(and_mask, mask_opaque);
-                if _mm_movemask_epi8(eq) != 0xFFFF {
-                    has_transparency = true;
-                }
-            }
-
-            i += 16;
-        }
-    }
-
-    // Scalar remainder
-    while i < total_pixels {
-        let alpha = rgba[i * 4 + 3];
-        dst_slice[i] = alpha;
-        if alpha != 255 {
+    for (pixel_idx, chunk) in rgba.chunks_exact(4).take(total_pixels).enumerate() {
+        let a = chunk[3];
+        dst_slice[pixel_idx] = a;
+        if a != 255 {
             has_transparency = true;
         }
-        i += 1;
     }
 
     if !has_transparency {
