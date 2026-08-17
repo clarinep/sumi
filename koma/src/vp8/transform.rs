@@ -32,10 +32,23 @@ pub fn fdct_4x4(input: &[i16; 16], output: &mut [i16; 16]) -> bool {
 
     #[cfg(not(target_arch = "x86_64"))]
     {
-        let any = (input[0] | input[1] | input[2] | input[3]
-            | input[4] | input[5] | input[6] | input[7]
-            | input[8] | input[9] | input[10] | input[11]
-            | input[12] | input[13] | input[14] | input[15]) != 0;
+        let any = (input[0]
+            | input[1]
+            | input[2]
+            | input[3]
+            | input[4]
+            | input[5]
+            | input[6]
+            | input[7]
+            | input[8]
+            | input[9]
+            | input[10]
+            | input[11]
+            | input[12]
+            | input[13]
+            | input[14]
+            | input[15])
+            != 0;
         if !any {
             output.fill(0);
             return false;
@@ -114,10 +127,22 @@ pub fn idct_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
 
     #[cfg(not(target_arch = "x86_64"))]
     {
-        let any_ac = (input[1] | input[2] | input[3] | input[4]
-            | input[5] | input[6] | input[7] | input[8]
-            | input[9] | input[10] | input[11] | input[12]
-            | input[13] | input[14] | input[15]) != 0;
+        let any_ac = (input[1]
+            | input[2]
+            | input[3]
+            | input[4]
+            | input[5]
+            | input[6]
+            | input[7]
+            | input[8]
+            | input[9]
+            | input[10]
+            | input[11]
+            | input[12]
+            | input[13]
+            | input[14]
+            | input[15])
+            != 0;
         if !any_ac {
             let dc = input[0] as i32;
             let dc_out = ((dc + 4) >> 3) as i16;
@@ -229,7 +254,10 @@ pub fn inverse_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
             return;
         }
         // DC only check
-        if _mm_movemask_epi8(eq_hi) == 0xFFFF && (_mm_movemask_epi8(eq_lo) & 0xFFFC) == 0xFFFC && input[1] == 0 {
+        if _mm_movemask_epi8(eq_hi) == 0xFFFF
+            && (_mm_movemask_epi8(eq_lo) & 0xFFFC) == 0xFFFC
+            && input[1] == 0
+        {
             let dc_out = ((input[0] as i32 + 3) >> 3) as i16;
             let vec_dc = _mm_set1_epi16(dc_out);
             _mm_storeu_si128(output.as_mut_ptr() as *mut __m128i, vec_dc);
@@ -261,4 +289,3 @@ pub fn inverse_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         output[i + 12] = ((d1 - c1 + 3) >> 3) as i16;
     }
 }
-

@@ -31,11 +31,7 @@ impl EncoderConfig {
     /// assert_eq!(config.quality, 90.0);
     /// ```
     pub const fn new(quality: f32) -> Self {
-        Self {
-            quality,
-            alpha_quality: 85,
-            fast_anime_shortcuts: true,
-        }
+        Self { quality, alpha_quality: 85, fast_anime_shortcuts: true }
     }
 
     /// Returns a builder to configure encoding options step by step.
@@ -58,11 +54,7 @@ impl EncoderConfig {
 impl Default for EncoderConfig {
     /// Returns the default configuration with a quality factor of `85.0`.
     fn default() -> Self {
-        Self {
-            quality: 85.0,
-            alpha_quality: 85,
-            fast_anime_shortcuts: true,
-        }
+        Self { quality: 85.0, alpha_quality: 85, fast_anime_shortcuts: true }
     }
 }
 
@@ -119,4 +111,3 @@ impl EncoderConfigBuilder {
         }
     }
 }
-

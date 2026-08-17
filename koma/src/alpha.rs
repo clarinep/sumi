@@ -97,10 +97,7 @@ pub fn extract_and_compress_alpha(
 
             // Fast opacity check
             if !has_transparency {
-                let check = _mm_and_si128(
-                    _mm_and_si128(p0, p1),
-                    _mm_and_si128(p2, p3),
-                );
+                let check = _mm_and_si128(_mm_and_si128(p0, p1), _mm_and_si128(p2, p3));
                 let and_mask = _mm_and_si128(check, mask_opaque);
                 let eq = _mm_cmpeq_epi32(and_mask, mask_opaque);
                 if _mm_movemask_epi8(eq) != 0xFFFF {

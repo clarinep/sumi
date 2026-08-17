@@ -10,11 +10,7 @@ const NORM_LUT: [u8; 256] = {
     let mut lut = [0u8; 256];
     let mut i = 0;
     while i < 256 {
-        lut[i] = if i == 0 {
-            8
-        } else {
-            (i as u8).leading_zeros() as u8
-        };
+        lut[i] = if i == 0 { 8 } else { (i as u8).leading_zeros() as u8 };
         i += 1;
     }
     lut
@@ -36,12 +32,7 @@ impl<'a> BoolEncoder<'a> {
     #[inline(always)]
     pub fn new(buffer: &'a mut Vec<u8>) -> Self {
         buffer.clear();
-        Self {
-            buffer,
-            lowvalue: 0,
-            range: 255,
-            count: -24,
-        }
+        Self { buffer, lowvalue: 0, range: 255, count: -24 }
     }
 
     /// Single-step fast normalization of arithmetic encoder state.

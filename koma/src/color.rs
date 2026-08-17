@@ -263,10 +263,14 @@ pub fn rgba_to_yuv420p(
             let idx00 = x0 * 4;
             let idx01 = x1 * 4;
 
-            let (r00, g00, b00) = (row0_src[idx00] as i32, row0_src[idx00 + 1] as i32, row0_src[idx00 + 2] as i32);
-            let (r01, g01, b01) = (row0_src[idx01] as i32, row0_src[idx01 + 1] as i32, row0_src[idx01 + 2] as i32);
-            let (r10, g10, b10) = (row1_src[idx00] as i32, row1_src[idx00 + 1] as i32, row1_src[idx00 + 2] as i32);
-            let (r11, g11, b11) = (row1_src[idx01] as i32, row1_src[idx01 + 1] as i32, row1_src[idx01 + 2] as i32);
+            let (r00, g00, b00) =
+                (row0_src[idx00] as i32, row0_src[idx00 + 1] as i32, row0_src[idx00 + 2] as i32);
+            let (r01, g01, b01) =
+                (row0_src[idx01] as i32, row0_src[idx01 + 1] as i32, row0_src[idx01 + 2] as i32);
+            let (r10, g10, b10) =
+                (row1_src[idx00] as i32, row1_src[idx00 + 1] as i32, row1_src[idx00 + 2] as i32);
+            let (r11, g11, b11) =
+                (row1_src[idx01] as i32, row1_src[idx01 + 1] as i32, row1_src[idx01 + 2] as i32);
 
             y_out0[x0] = rgb_to_y(r00, g00, b00);
             if x0 + 1 < width {
@@ -311,18 +315,20 @@ pub fn rgba_to_yuv420p(
         for y in height..pad_height {
             let src_y = height - 1;
             let (src, dst) = y_plane.split_at_mut(y * pad_width);
-            dst[..pad_width].copy_from_slice(&src[src_y * pad_width..src_y * pad_width + pad_width]);
+            dst[..pad_width]
+                .copy_from_slice(&src[src_y * pad_width..src_y * pad_width + pad_width]);
         }
         let uv_h = (height + 1) / 2;
         let pad_uv_h = pad_height / 2;
         for y in uv_h..pad_uv_h {
             let src_y = uv_h - 1;
             let (src_u, dst_u) = u_plane.split_at_mut(y * uv_stride);
-            dst_u[..uv_stride].copy_from_slice(&src_u[src_y * uv_stride..src_y * uv_stride + uv_stride]);
+            dst_u[..uv_stride]
+                .copy_from_slice(&src_u[src_y * uv_stride..src_y * uv_stride + uv_stride]);
 
             let (src_v, dst_v) = v_plane.split_at_mut(y * uv_stride);
-            dst_v[..uv_stride].copy_from_slice(&src_v[src_y * uv_stride..src_y * uv_stride + uv_stride]);
+            dst_v[..uv_stride]
+                .copy_from_slice(&src_v[src_y * uv_stride..src_y * uv_stride + uv_stride]);
         }
     }
 }
-

@@ -30,7 +30,6 @@
 //! }
 //! ```
 
-
 pub mod alpha;
 pub mod color;
 pub mod error;
@@ -41,11 +40,11 @@ pub mod vp8;
 #[doc(inline)]
 pub use error::{KomaError, Result};
 #[doc(inline)]
-pub use pool::{EncoderScratch, ENCODER_SCRATCH_POOL};
+pub use pool::{ENCODER_SCRATCH_POOL, EncoderScratch};
 #[doc(inline)]
 pub use riff::assemble_webp;
 #[doc(inline)]
-pub use vp8::{encode_lossy_frame, EncoderConfig, EncoderConfigBuilder};
+pub use vp8::{EncoderConfig, EncoderConfigBuilder, encode_lossy_frame};
 
 /// Encodes an RGBA byte slice into a lossy WebP image.
 ///
