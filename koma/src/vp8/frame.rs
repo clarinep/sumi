@@ -3,18 +3,16 @@
 //! Orchestrates the intra-prediction modes, 4x4 subblock transforms, coefficient
 //! quantization, and entropy encoding according to RFC 6386 keyframe specifications.
 
+use crate::vp8::bool_coder::BoolEncoder;
+use crate::vp8::config::EncoderConfig;
+use crate::vp8::tables::{
+    AC_QLOOKUP, DC_QLOOKUP, PCAT1, PCAT2, PCAT3, PROB_EOB, PROB_ONE, PROB_TWO, PROB_ZERO,
+    VP8_START_CODE, ZIGZAG,
+};
+use crate::vp8::transform::{fdct_4x4, forward_wht_4x4, idct_4x4, inverse_wht_4x4};
+
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
-
-use crate::vp8::{
-    bool_coder::BoolEncoder,
-    config::EncoderConfig,
-    tables::{
-        AC_QLOOKUP, DC_QLOOKUP, PCAT1, PCAT2, PCAT3, PROB_EOB, PROB_ONE, PROB_TWO, PROB_ZERO,
-        VP8_START_CODE, ZIGZAG,
-    },
-    transform::{fdct_4x4, forward_wht_4x4, idct_4x4, inverse_wht_4x4},
-};
 
 /// High-performance reciprocal quantizer eliminating CPU division pipeline stalls (`IDIV`).
 ///
@@ -40,7 +38,11 @@ impl FastQuantizer {
     pub fn quantize(&self, coeff: i16) -> i16 {
         let abs_c = coeff.unsigned_abs() as u64;
         let q_val = ((abs_c * self.inv_q) >> 32) as i16;
-        if coeff < 0 { -q_val } else { q_val }
+        if coeff < 0 {
+            -q_val
+        } else {
+            q_val
+        }
     }
 
     /// Dequantizes a quantized coefficient.
@@ -108,7 +110,7 @@ fn is_flat_8(slice: &[u8], target: u8) -> bool {
 fn sum_bytes_8(slice: &[u8]) -> u32 {
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        let chunk_u64 = *(slice.as_ptr() as *const u64);
+        let chunk_u64 = std::ptr::read_unaligned(slice.as_ptr() as *const u64);
         let vec = _mm_cvtsi64_si128(chunk_u64 as i64);
         let zero = _mm_setzero_si128();
         let sad = _mm_sad_epu8(vec, zero);
@@ -259,8 +261,8 @@ pub fn encode_lossy_frame(
     bool_coder.put_bit_equi(false); // Normal clamping
     bool_coder.put_bit_equi(false); // No segmentation
     bool_coder.put_bit_equi(false); // Filter type: 0
-    bool_coder.put_literal(0, 6); // Filter level
-    bool_coder.put_literal(0, 3); // Sharpness
+    bool_coder.put_literal(0, 6);   // Filter level
+    bool_coder.put_literal(0, 3);   // Sharpness
     bool_coder.put_literal(q_idx as u32, 7); // Base q_index
     bool_coder.put_bit_equi(false); // No delta_q
     bool_coder.put_bit_equi(false);
@@ -490,12 +492,9 @@ pub fn encode_lossy_frame(
                             let r_idx = (uv_y_px + blk_y + y) * uv_stride + (uv_x_px + blk_x);
                             let r_row = y * 4;
                             recon_p[r_idx] = (dc_val_i16 + rec_res[r_row]).clamp(0, 255) as u8;
-                            recon_p[r_idx + 1] =
-                                (dc_val_i16 + rec_res[r_row + 1]).clamp(0, 255) as u8;
-                            recon_p[r_idx + 2] =
-                                (dc_val_i16 + rec_res[r_row + 2]).clamp(0, 255) as u8;
-                            recon_p[r_idx + 3] =
-                                (dc_val_i16 + rec_res[r_row + 3]).clamp(0, 255) as u8;
+                            recon_p[r_idx + 1] = (dc_val_i16 + rec_res[r_row + 1]).clamp(0, 255) as u8;
+                            recon_p[r_idx + 2] = (dc_val_i16 + rec_res[r_row + 2]).clamp(0, 255) as u8;
+                            recon_p[r_idx + 3] = (dc_val_i16 + rec_res[r_row + 3]).clamp(0, 255) as u8;
                         }
                     }
                 }
@@ -526,3 +525,4 @@ pub fn encode_lossy_frame(
 
     vp8_output_buf.extend_from_slice(vp8_entropy_buf);
 }
+
