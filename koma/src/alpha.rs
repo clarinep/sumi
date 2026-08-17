@@ -91,11 +91,10 @@ pub fn filter_alpha_horizontal(src: &[u8], width: usize, height: usize, dst: &mu
     }
 }
 
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-
 #[cfg(target_arch = "aarch64")]
 use std::arch::aarch64::*;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
 
 /// Extracts alpha plane from interleaved RGBA pixel data and compresses it into an ALPH chunk.
 ///

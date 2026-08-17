@@ -3,19 +3,20 @@
 //! Orchestrates the intra-prediction modes, 4x4 subblock transforms, coefficient
 //! quantization, and entropy encoding according to RFC 6386 keyframe specifications.
 
-use crate::vp8::bool_coder::BoolEncoder;
-use crate::vp8::config::EncoderConfig;
-use crate::vp8::tables::{
-    AC_QLOOKUP, DC_QLOOKUP, PCAT1, PCAT2, PCAT3, PROB_EOB, PROB_ONE, PROB_TWO, PROB_ZERO,
-    VP8_START_CODE, ZIGZAG,
-};
-use crate::vp8::transform::{fdct_4x4, forward_wht_4x4, idct_4x4, inverse_wht_4x4};
-
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-#[cfg(target_arch = "aarch64")]
-use std::arch::aarch64::*;
+use crate::vp8::{
+    bool_coder::BoolEncoder,
+    config::EncoderConfig,
+    tables::{
+        AC_QLOOKUP, DC_QLOOKUP, PCAT1, PCAT2, PCAT3, PROB_EOB, PROB_ONE, PROB_TWO, PROB_ZERO,
+        VP8_START_CODE, ZIGZAG,
+    },
+    transform::{fdct_4x4, forward_wht_4x4, idct_4x4, inverse_wht_4x4},
+};
 
 /// High-performance reciprocal quantizer eliminating CPU division pipeline stalls (`IDIV`).
 ///
@@ -41,11 +42,7 @@ impl FastQuantizer {
     pub fn quantize(&self, coeff: i16) -> i16 {
         let abs_c = coeff.unsigned_abs() as u64;
         let q_val = ((abs_c * self.inv_q) >> 32) as i16;
-        if coeff < 0 {
-            -q_val
-        } else {
-            q_val
-        }
+        if coeff < 0 { -q_val } else { q_val }
     }
 
     /// Dequantizes a quantized coefficient.
@@ -72,7 +69,9 @@ pub fn quality_to_q_index(quality: f32) -> usize {
 /// Checks if 16 contiguous bytes in memory match a target constant byte using SIMD.
 #[inline(always)]
 fn is_flat_16(slice: &[u8], target: u8) -> bool {
-    if slice.len() < 16 { return false; }
+    if slice.len() < 16 {
+        return false;
+    }
     #[cfg(target_arch = "aarch64")]
     unsafe {
         let chunk = vld1q_u8(slice.as_ptr());
@@ -111,7 +110,9 @@ fn is_flat_16(slice: &[u8], target: u8) -> bool {
 /// Checks if 8 contiguous bytes in memory match a target constant byte.
 #[inline(always)]
 fn is_flat_8(slice: &[u8], target: u8) -> bool {
-    if slice.len() < 8 { return false; }
+    if slice.len() < 8 {
+        return false;
+    }
     let target_u64 = u64::from_ne_bytes([target; 8]);
     let chunk_u64 = u64::from_ne_bytes(slice[..8].try_into().unwrap_or([0; 8]));
     chunk_u64 == target_u64
@@ -120,7 +121,9 @@ fn is_flat_8(slice: &[u8], target: u8) -> bool {
 /// Fast sum of 8 unsigned bytes using SIMD SAD or 64-bit word operations.
 #[inline(always)]
 fn sum_bytes_8(slice: &[u8]) -> u32 {
-    if slice.len() < 8 { return slice.iter().copied().map(u32::from).sum(); }
+    if slice.len() < 8 {
+        return slice.iter().copied().map(u32::from).sum();
+    }
     #[cfg(target_arch = "aarch64")]
     unsafe {
         let chunk = vld1_u8(slice.as_ptr());
@@ -143,7 +146,9 @@ fn sum_bytes_8(slice: &[u8]) -> u32 {
 /// Fast sum of 16 unsigned bytes using SIMD SAD (Sum of Absolute Differences against zero).
 #[inline(always)]
 fn sum_bytes_16(slice: &[u8]) -> u32 {
-    if slice.len() < 16 { return slice.iter().copied().map(u32::from).sum(); }
+    if slice.len() < 16 {
+        return slice.iter().copied().map(u32::from).sum();
+    }
     #[cfg(target_arch = "aarch64")]
     unsafe {
         let chunk = vld1q_u8(slice.as_ptr());
@@ -171,12 +176,12 @@ fn sub_dc_4x4(src: &[u8], offset: usize, stride: usize, dc: i16, out: &mut [i16;
     unsafe {
         let dc_vec = vdupq_n_s16(dc);
         let ptr = src.as_ptr().add(offset);
-        
+
         let r0 = (ptr as *const u32).read_unaligned();
         let r1 = (ptr.add(stride) as *const u32).read_unaligned();
         let r2 = (ptr.add(stride * 2) as *const u32).read_unaligned();
         let r3 = (ptr.add(stride * 3) as *const u32).read_unaligned();
-        
+
         let u8_0 = vreinterpret_u8_u32(vdup_n_u32(r0));
         let u8_1 = vreinterpret_u8_u32(vdup_n_u32(r1));
         let u8_2 = vreinterpret_u8_u32(vdup_n_u32(r2));
@@ -184,13 +189,13 @@ fn sub_dc_4x4(src: &[u8], offset: usize, stride: usize, dc: i16, out: &mut [i16;
 
         let u8_01 = vcombine_u8(u8_0, u8_1);
         let u8_23 = vcombine_u8(u8_2, u8_3);
-        
+
         let u16_01 = vmovl_u8(vget_low_u8(u8_01));
         let u16_23 = vmovl_u8(vget_low_u8(u8_23));
-        
+
         let s16_01 = vsubq_s16(vreinterpretq_s16_u16(u16_01), dc_vec);
         let s16_23 = vsubq_s16(vreinterpretq_s16_u16(u16_23), dc_vec);
-        
+
         vst1q_s16(out.as_mut_ptr(), s16_01);
         vst1q_s16(out.as_mut_ptr().add(8), s16_23);
     }
@@ -198,19 +203,19 @@ fn sub_dc_4x4(src: &[u8], offset: usize, stride: usize, dc: i16, out: &mut [i16;
     unsafe {
         let dc_vec = _mm_set1_epi16(dc);
         let ptr = src.as_ptr().add(offset);
-        
+
         let r0 = (ptr as *const u32).read_unaligned();
         let r1 = (ptr.add(stride) as *const u32).read_unaligned();
         let r2 = (ptr.add(stride * 2) as *const u32).read_unaligned();
         let r3 = (ptr.add(stride * 3) as *const u32).read_unaligned();
-        
+
         let v01 = _mm_set_epi32(0, 0, r1 as i32, r0 as i32);
         let v23 = _mm_set_epi32(0, 0, r3 as i32, r2 as i32);
         let zero = _mm_setzero_si128();
-        
+
         let s16_01 = _mm_sub_epi16(_mm_unpacklo_epi8(v01, zero), dc_vec);
         let s16_23 = _mm_sub_epi16(_mm_unpacklo_epi8(v23, zero), dc_vec);
-        
+
         _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, s16_01);
         _mm_storeu_si128(out.as_mut_ptr().add(8) as *mut __m128i, s16_23);
     }
@@ -229,7 +234,13 @@ fn sub_dc_4x4(src: &[u8], offset: usize, stride: usize, dc: i16, out: &mut [i16;
 
 /// Adds DC predictor to 16 residual coefficients, clamps to [0, 255] and stores with SIMD.
 #[inline(always)]
-fn add_dc_and_clamp_4x4(res: &[i16; 16], dc: i16, dst: &mut [u8], dst_offset: usize, stride: usize) {
+fn add_dc_and_clamp_4x4(
+    res: &[i16; 16],
+    dc: i16,
+    dst: &mut [u8],
+    dst_offset: usize,
+    stride: usize,
+) {
     #[cfg(target_arch = "aarch64")]
     unsafe {
         let dc_vec = vdupq_n_s16(dc);
@@ -239,12 +250,14 @@ fn add_dc_and_clamp_4x4(res: &[i16; 16], dc: i16, dst: &mut [u8], dst_offset: us
         let sum1 = vaddq_s16(res1, dc_vec);
         let u8_0 = vqmovun_s16(sum0);
         let u8_1 = vqmovun_s16(sum1);
-        
+
         let ptr = dst.as_mut_ptr().add(dst_offset);
         (ptr as *mut u32).write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_0), 0));
         (ptr.add(stride) as *mut u32).write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_0), 1));
-        (ptr.add(stride * 2) as *mut u32).write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_1), 0));
-        (ptr.add(stride * 3) as *mut u32).write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_1), 1));
+        (ptr.add(stride * 2) as *mut u32)
+            .write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_1), 0));
+        (ptr.add(stride * 3) as *mut u32)
+            .write_unaligned(vget_lane_u32(vreinterpret_u32_u8(u8_1), 1));
     }
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -254,13 +267,13 @@ fn add_dc_and_clamp_4x4(res: &[i16; 16], dc: i16, dst: &mut [u8], dst_offset: us
         let sum0 = _mm_add_epi16(res0, dc_vec);
         let sum1 = _mm_add_epi16(res1, dc_vec);
         let clamped = _mm_packus_epi16(sum0, sum1);
-        
+
         let ptr = dst.as_mut_ptr().add(dst_offset);
         let r0 = _mm_cvtsi128_si32(clamped) as u32;
         let r1 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 4)) as u32;
         let r2 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 8)) as u32;
         let r3 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 12)) as u32;
-        
+
         (ptr as *mut u32).write_unaligned(r0);
         (ptr.add(stride) as *mut u32).write_unaligned(r1);
         (ptr.add(stride * 2) as *mut u32).write_unaligned(r2);
@@ -478,8 +491,8 @@ pub fn encode_lossy_frame(
     bool_coder.put_bit_equi(false); // Normal clamping
     bool_coder.put_bit_equi(false); // No segmentation
     bool_coder.put_bit_equi(false); // Filter type: 0
-    bool_coder.put_literal(0, 6);   // Filter level
-    bool_coder.put_literal(0, 3);   // Sharpness
+    bool_coder.put_literal(0, 6); // Filter level
+    bool_coder.put_literal(0, 3); // Sharpness
     bool_coder.put_literal(q_idx as u32, 7); // Base q_index
     bool_coder.put_bit_equi(false); // No delta_q
     bool_coder.put_bit_equi(false);
@@ -599,7 +612,13 @@ pub fn encode_lossy_frame(
                 }
 
                 forward_wht_4x4(&y_dc_coeffs, &mut y_wht_coeffs);
-                quantize_dequantize_block(&y_wht_coeffs, &q_y2_dc, &q_y2_ac, &mut y_q_wht, &mut y_deq_wht);
+                quantize_dequantize_block(
+                    &y_wht_coeffs,
+                    &q_y2_dc,
+                    &q_y2_ac,
+                    &mut y_q_wht,
+                    &mut y_deq_wht,
+                );
                 inverse_wht_4x4(&y_deq_wht, &mut y_rec_dc);
 
                 encode_coeffs_block(&y_q_wht, 0, &mut bool_coder);
@@ -609,7 +628,13 @@ pub fn encode_lossy_frame(
                     let blk_y = (blk >> 2) * 4;
 
                     let mut dequant = [0i16; 16];
-                    quantize_dequantize_y1_ac(&sub_coeffs[blk], &q_y1_ac, y_rec_dc[blk], &mut sub_q[blk], &mut dequant);
+                    quantize_dequantize_y1_ac(
+                        &sub_coeffs[blk],
+                        &q_y1_ac,
+                        y_rec_dc[blk],
+                        &mut sub_q[blk],
+                        &mut dequant,
+                    );
                     encode_coeffs_block(&sub_q[blk], 1, &mut bool_coder);
 
                     let mut rec_res = [0i16; 16];
@@ -666,7 +691,13 @@ pub fn encode_lossy_frame(
                         let mut rec_res = [0i16; 16];
 
                         fdct_4x4(&res, &mut coeffs);
-                        quantize_dequantize_block(&coeffs, &q_uv_dc, &q_uv_ac, &mut q_coeffs, &mut dequant);
+                        quantize_dequantize_block(
+                            &coeffs,
+                            &q_uv_dc,
+                            &q_uv_ac,
+                            &mut q_coeffs,
+                            &mut dequant,
+                        );
                         encode_coeffs_block(&q_coeffs, 0, &mut bool_coder);
 
                         idct_4x4(&dequant, &mut rec_res);
@@ -702,4 +733,3 @@ pub fn encode_lossy_frame(
 
     vp8_output_buf.extend_from_slice(vp8_entropy_buf);
 }
-

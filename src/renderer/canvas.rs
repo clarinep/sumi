@@ -1,13 +1,15 @@
-use crossbeam_queue::ArrayQueue;
 use std::{sync::LazyLock, time::Instant};
+
 use bytes::Bytes;
+use crossbeam_queue::ArrayQueue;
 use itoa::Buffer;
+
 use super::{
+    PrintNumber,
     encoder::encode_webp,
     error::Result,
     pixels::{Point, RawCardImage},
     print::{draw_print_number, measure_print_number},
-    PrintNumber,
 };
 
 const TEXT_SIZE: f32 = 60.0;
@@ -21,7 +23,9 @@ fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, po
     let total_row_bytes = (total_width * 4) as usize;
     let dest_rows = buffer.chunks_exact_mut(total_row_bytes);
     let src_rows = card.pixels.chunks_exact(card_row_bytes);
-    for (dest_row, src_row) in dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize) {
+    for (dest_row, src_row) in
+        dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize)
+    {
         let x_offset = (pos.x * 4) as usize;
         dest_row[x_offset..x_offset + card_row_bytes].copy_from_slice(src_row);
     }
@@ -37,7 +41,8 @@ fn format_print_number(print_num: u16, buf: &mut [u8; 8]) -> &[u8] {
     &buf[..len]
 }
 
-static DROP_POOL: LazyLock<ArrayQueue<Vec<u8>>> = LazyLock::new(|| ArrayQueue::new(MAX_POOL_BUFFERS));
+static DROP_POOL: LazyLock<ArrayQueue<Vec<u8>>> =
+    LazyLock::new(|| ArrayQueue::new(MAX_POOL_BUFFERS));
 const MAX_POOL_BUFFERS: usize = 16;
 
 struct BufferGuard {
@@ -93,10 +98,7 @@ pub(super) fn create_drop_image(
     let total_height = max_card_height + PADDING_BETWEEN_CARDS * 2;
 
     let required_len = (total_width * total_height * 4) as usize;
-    let mut buffer = BufferGuard::new(
-        DROP_POOL.pop().unwrap_or_default(),
-        required_len,
-    );
+    let mut buffer = BufferGuard::new(DROP_POOL.pop().unwrap_or_default(), required_len);
 
     let left_card_x = PADDING_BETWEEN_CARDS;
     let right_card_x = left_width + PADDING_BETWEEN_CARDS * 2;

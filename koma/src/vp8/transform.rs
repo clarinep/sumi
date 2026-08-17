@@ -3,11 +3,10 @@
 //! Provides hardware-accelerated (SSE2/SSSE3/AVX2) and branchless integer fixed-point 4x4
 //! transform arithmetic defined in RFC 6386 Sections 14.1–14.4.
 
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-
 #[cfg(target_arch = "aarch64")]
 use std::arch::aarch64::*;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
 
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
@@ -161,8 +160,14 @@ pub fn fdct_4x4(input: &[i16; 16], output: &mut [i16; 16]) -> bool {
         let d1_2217 = _mm_mullo_epi32_portable(d1, k2217);
         let c1_5352 = _mm_mullo_epi32_portable(c1, k5352);
 
-        let t1 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(d1_5352, c1_2217), _mm_set1_epi32(14500)), 12);
-        let t3 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(d1_2217, c1_5352), _mm_set1_epi32(7500)), 12);
+        let t1 = _mm_srai_epi32(
+            _mm_add_epi32(_mm_add_epi32(d1_5352, c1_2217), _mm_set1_epi32(14500)),
+            12,
+        );
+        let t3 = _mm_srai_epi32(
+            _mm_add_epi32(_mm_sub_epi32(d1_2217, c1_5352), _mm_set1_epi32(7500)),
+            12,
+        );
 
         // Pass 2: Column transform
         let ct_lo0 = _mm_unpacklo_epi32(t0, t1);
@@ -170,10 +175,14 @@ pub fn fdct_4x4(input: &[i16; 16], output: &mut [i16; 16]) -> bool {
         let ct_lo1 = _mm_unpacklo_epi32(t2, t3);
         let ct_hi1 = _mm_unpackhi_epi32(t2, t3);
 
-        let u0 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_lo0), _mm_castsi128_ps(ct_lo1)));
-        let u1 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_lo1), _mm_castsi128_ps(ct_lo0)));
-        let u2 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_hi0), _mm_castsi128_ps(ct_hi1)));
-        let u3 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_hi1), _mm_castsi128_ps(ct_hi0)));
+        let u0 =
+            _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_lo0), _mm_castsi128_ps(ct_lo1)));
+        let u1 =
+            _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_lo1), _mm_castsi128_ps(ct_lo0)));
+        let u2 =
+            _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_hi0), _mm_castsi128_ps(ct_hi1)));
+        let u3 =
+            _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_hi1), _mm_castsi128_ps(ct_hi0)));
 
         let col_a1 = _mm_add_epi32(u0, u3);
         let col_b1 = _mm_add_epi32(u1, u2);
@@ -188,8 +197,14 @@ pub fn fdct_4x4(input: &[i16; 16], output: &mut [i16; 16]) -> bool {
         let col_d1_2217 = _mm_mullo_epi32_portable(col_d1, k2217);
         let col_c1_5352 = _mm_mullo_epi32_portable(col_c1, k5352);
 
-        let o1 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_d1_5352, col_c1_2217), _mm_set1_epi32(12000)), 16);
-        let o3 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_d1_2217, col_c1_5352), _mm_set1_epi32(51000)), 16);
+        let o1 = _mm_srai_epi32(
+            _mm_add_epi32(_mm_add_epi32(col_d1_5352, col_c1_2217), _mm_set1_epi32(12000)),
+            16,
+        );
+        let o3 = _mm_srai_epi32(
+            _mm_add_epi32(_mm_sub_epi32(col_d1_2217, col_c1_5352), _mm_set1_epi32(51000)),
+            16,
+        );
 
         let out01_16 = _mm_packs_epi32(o0, o1);
         let out23_16 = _mm_packs_epi32(o2, o3);
@@ -201,10 +216,23 @@ pub fn fdct_4x4(input: &[i16; 16], output: &mut [i16; 16]) -> bool {
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
-        let any = (input[0] | input[1] | input[2] | input[3]
-            | input[4] | input[5] | input[6] | input[7]
-            | input[8] | input[9] | input[10] | input[11]
-            | input[12] | input[13] | input[14] | input[15]) != 0;
+        let any = (input[0]
+            | input[1]
+            | input[2]
+            | input[3]
+            | input[4]
+            | input[5]
+            | input[6]
+            | input[7]
+            | input[8]
+            | input[9]
+            | input[10]
+            | input[11]
+            | input[12]
+            | input[13]
+            | input[14]
+            | input[15])
+            != 0;
         if !any {
             output.fill(0);
             return false;
@@ -393,10 +421,14 @@ pub fn idct_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let trn_lo1 = _mm_unpacklo_epi32(t2, t3);
         let trn_hi1 = _mm_unpackhi_epi32(t2, t3);
 
-        let v0 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(trn_lo0), _mm_castsi128_ps(trn_lo1)));
-        let v1 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(trn_lo1), _mm_castsi128_ps(trn_lo0)));
-        let v2 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(trn_hi0), _mm_castsi128_ps(trn_hi1)));
-        let v3 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(trn_hi1), _mm_castsi128_ps(trn_hi0)));
+        let v0 =
+            _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(trn_lo0), _mm_castsi128_ps(trn_lo1)));
+        let v1 =
+            _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(trn_lo1), _mm_castsi128_ps(trn_lo0)));
+        let v2 =
+            _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(trn_hi0), _mm_castsi128_ps(trn_hi1)));
+        let v3 =
+            _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(trn_hi1), _mm_castsi128_ps(trn_hi0)));
 
         // Pass 2: Row pass
         let row_a1 = _mm_add_epi32(v0, v2);
@@ -426,10 +458,22 @@ pub fn idct_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
-        let any_ac = (input[1] | input[2] | input[3] | input[4]
-            | input[5] | input[6] | input[7] | input[8]
-            | input[9] | input[10] | input[11] | input[12]
-            | input[13] | input[14] | input[15]) != 0;
+        let any_ac = (input[1]
+            | input[2]
+            | input[3]
+            | input[4]
+            | input[5]
+            | input[6]
+            | input[7]
+            | input[8]
+            | input[9]
+            | input[10]
+            | input[11]
+            | input[12]
+            | input[13]
+            | input[14]
+            | input[15])
+            != 0;
         if !any_ac {
             let dc = input[0] as i32;
             let dc_out = ((dc + 4) >> 3) as i16;
@@ -602,10 +646,14 @@ pub fn forward_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let ct_lo1 = _mm_unpacklo_epi32(t2, t3);
         let ct_hi1 = _mm_unpackhi_epi32(t2, t3);
 
-        let u0 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_lo0), _mm_castsi128_ps(ct_lo1)));
-        let u1 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_lo1), _mm_castsi128_ps(ct_lo0)));
-        let u2 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_hi0), _mm_castsi128_ps(ct_hi1)));
-        let u3 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_hi1), _mm_castsi128_ps(ct_hi0)));
+        let u0 =
+            _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_lo0), _mm_castsi128_ps(ct_lo1)));
+        let u1 =
+            _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_lo1), _mm_castsi128_ps(ct_lo0)));
+        let u2 =
+            _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_hi0), _mm_castsi128_ps(ct_hi1)));
+        let u3 =
+            _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_hi1), _mm_castsi128_ps(ct_hi0)));
 
         let col_a1 = _mm_add_epi32(u0, u3);
         let col_b1 = _mm_add_epi32(u1, u2);
@@ -745,7 +793,10 @@ pub fn inverse_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
             return;
         }
         // DC only check
-        if _mm_movemask_epi8(eq_hi) == 0xFFFF && (_mm_movemask_epi8(eq_lo) & 0xFFFC) == 0xFFFC && input[1] == 0 {
+        if _mm_movemask_epi8(eq_hi) == 0xFFFF
+            && (_mm_movemask_epi8(eq_lo) & 0xFFFC) == 0xFFFC
+            && input[1] == 0
+        {
             let dc_out = ((input[0] as i32 + 3) >> 3) as i16;
             let vec_dc = _mm_set1_epi16(dc_out);
             _mm_storeu_si128(output.as_mut_ptr() as *mut __m128i, vec_dc);
@@ -785,10 +836,14 @@ pub fn inverse_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let ct_lo1 = _mm_unpacklo_epi32(t2, t3);
         let ct_hi1 = _mm_unpackhi_epi32(t2, t3);
 
-        let u0 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_lo0), _mm_castsi128_ps(ct_lo1)));
-        let u1 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_lo1), _mm_castsi128_ps(ct_lo0)));
-        let u2 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_hi0), _mm_castsi128_ps(ct_hi1)));
-        let u3 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_hi1), _mm_castsi128_ps(ct_hi0)));
+        let u0 =
+            _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_lo0), _mm_castsi128_ps(ct_lo1)));
+        let u1 =
+            _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_lo1), _mm_castsi128_ps(ct_lo0)));
+        let u2 =
+            _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(ct_hi0), _mm_castsi128_ps(ct_hi1)));
+        let u3 =
+            _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(ct_hi1), _mm_castsi128_ps(ct_hi0)));
 
         let col_a1 = _mm_add_epi32(u0, u3);
         let col_b1 = _mm_add_epi32(u1, u2);
@@ -835,4 +890,3 @@ pub fn inverse_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         }
     }
 }
-

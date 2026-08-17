@@ -4,13 +4,12 @@
 //! subsampling. Formatted row-by-row on contiguous slices for auto-vectorization (AVX2/SSE2)
 //! and zero heap allocations.
 
-#[cfg(target_arch = "x86_64")]
-#[allow(unused_imports)]
-use std::arch::x86_64::*;
-
 #[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]
 use std::arch::aarch64::*;
+#[cfg(target_arch = "x86_64")]
+#[allow(unused_imports)]
+use std::arch::x86_64::*;
 
 #[inline(always)]
 fn rgb_to_y(r: i32, g: i32, b: i32) -> u8 {
@@ -200,14 +199,44 @@ pub fn rgba_to_yuv420p(
                 let c1_6 = _mm_cvtsi128_si32(_mm_srli_si128(p1_1, 8)) as u32;
                 let c1_7 = _mm_cvtsi128_si32(_mm_srli_si128(p1_1, 12)) as u32;
 
-                let r0_vec = _mm_set_epi16((c0_7 & 0xFF) as i16, (c0_6 & 0xFF) as i16, (c0_5 & 0xFF) as i16, (c0_4 & 0xFF) as i16, (c0_3 & 0xFF) as i16, (c0_2 & 0xFF) as i16, (c0_1 & 0xFF) as i16, (c0_0 & 0xFF) as i16);
-                let g0_vec = _mm_set_epi16(((c0_7 >> 8) & 0xFF) as i16, ((c0_6 >> 8) & 0xFF) as i16, ((c0_5 >> 8) & 0xFF) as i16, ((c0_4 >> 8) & 0xFF) as i16, ((c0_3 >> 8) & 0xFF) as i16, ((c0_2 >> 8) & 0xFF) as i16, ((c0_1 >> 8) & 0xFF) as i16, ((c0_0 >> 8) & 0xFF) as i16);
-                let b0_vec = _mm_set_epi16(((c0_7 >> 16) & 0xFF) as i16, ((c0_6 >> 16) & 0xFF) as i16, ((c0_5 >> 16) & 0xFF) as i16, ((c0_4 >> 16) & 0xFF) as i16, ((c0_3 >> 16) & 0xFF) as i16, ((c0_2 >> 16) & 0xFF) as i16, ((c0_1 >> 16) & 0xFF) as i16, ((c0_0 >> 16) & 0xFF) as i16);
+                let r0_vec = _mm_set_epi16(
+                    (c0_7 & 0xFF) as i16,
+                    (c0_6 & 0xFF) as i16,
+                    (c0_5 & 0xFF) as i16,
+                    (c0_4 & 0xFF) as i16,
+                    (c0_3 & 0xFF) as i16,
+                    (c0_2 & 0xFF) as i16,
+                    (c0_1 & 0xFF) as i16,
+                    (c0_0 & 0xFF) as i16,
+                );
+                let g0_vec = _mm_set_epi16(
+                    ((c0_7 >> 8) & 0xFF) as i16,
+                    ((c0_6 >> 8) & 0xFF) as i16,
+                    ((c0_5 >> 8) & 0xFF) as i16,
+                    ((c0_4 >> 8) & 0xFF) as i16,
+                    ((c0_3 >> 8) & 0xFF) as i16,
+                    ((c0_2 >> 8) & 0xFF) as i16,
+                    ((c0_1 >> 8) & 0xFF) as i16,
+                    ((c0_0 >> 8) & 0xFF) as i16,
+                );
+                let b0_vec = _mm_set_epi16(
+                    ((c0_7 >> 16) & 0xFF) as i16,
+                    ((c0_6 >> 16) & 0xFF) as i16,
+                    ((c0_5 >> 16) & 0xFF) as i16,
+                    ((c0_4 >> 16) & 0xFF) as i16,
+                    ((c0_3 >> 16) & 0xFF) as i16,
+                    ((c0_2 >> 16) & 0xFF) as i16,
+                    ((c0_1 >> 16) & 0xFF) as i16,
+                    ((c0_0 >> 16) & 0xFF) as i16,
+                );
 
                 let y0_16 = _mm_add_epi16(
                     _mm_srli_epi16(
                         _mm_add_epi16(
-                            _mm_add_epi16(_mm_mullo_epi16(r0_vec, k66), _mm_mullo_epi16(g0_vec, k129)),
+                            _mm_add_epi16(
+                                _mm_mullo_epi16(r0_vec, k66),
+                                _mm_mullo_epi16(g0_vec, k129),
+                            ),
                             _mm_add_epi16(_mm_mullo_epi16(b0_vec, k25), k128_16),
                         ),
                         8,
@@ -218,15 +247,45 @@ pub fn rgba_to_yuv420p(
                 let y0_u64 = _mm_cvtsi128_si64(y0_8) as u64;
                 (y_out0.as_mut_ptr().add(col_x) as *mut u64).write_unaligned(y0_u64);
 
-                let r1_vec = _mm_set_epi16((c1_7 & 0xFF) as i16, (c1_6 & 0xFF) as i16, (c1_5 & 0xFF) as i16, (c1_4 & 0xFF) as i16, (c1_3 & 0xFF) as i16, (c1_2 & 0xFF) as i16, (c1_1 & 0xFF) as i16, (c1_0 & 0xFF) as i16);
-                let g1_vec = _mm_set_epi16(((c1_7 >> 8) & 0xFF) as i16, ((c1_6 >> 8) & 0xFF) as i16, ((c1_5 >> 8) & 0xFF) as i16, ((c1_4 >> 8) & 0xFF) as i16, ((c1_3 >> 8) & 0xFF) as i16, ((c1_2 >> 8) & 0xFF) as i16, ((c1_1 >> 8) & 0xFF) as i16, ((c1_0 >> 8) & 0xFF) as i16);
-                let b1_vec = _mm_set_epi16(((c1_7 >> 16) & 0xFF) as i16, ((c1_6 >> 16) & 0xFF) as i16, ((c1_5 >> 16) & 0xFF) as i16, ((c1_4 >> 16) & 0xFF) as i16, ((c1_3 >> 16) & 0xFF) as i16, ((c1_2 >> 16) & 0xFF) as i16, ((c1_1 >> 16) & 0xFF) as i16, ((c1_0 >> 16) & 0xFF) as i16);
+                let r1_vec = _mm_set_epi16(
+                    (c1_7 & 0xFF) as i16,
+                    (c1_6 & 0xFF) as i16,
+                    (c1_5 & 0xFF) as i16,
+                    (c1_4 & 0xFF) as i16,
+                    (c1_3 & 0xFF) as i16,
+                    (c1_2 & 0xFF) as i16,
+                    (c1_1 & 0xFF) as i16,
+                    (c1_0 & 0xFF) as i16,
+                );
+                let g1_vec = _mm_set_epi16(
+                    ((c1_7 >> 8) & 0xFF) as i16,
+                    ((c1_6 >> 8) & 0xFF) as i16,
+                    ((c1_5 >> 8) & 0xFF) as i16,
+                    ((c1_4 >> 8) & 0xFF) as i16,
+                    ((c1_3 >> 8) & 0xFF) as i16,
+                    ((c1_2 >> 8) & 0xFF) as i16,
+                    ((c1_1 >> 8) & 0xFF) as i16,
+                    ((c1_0 >> 8) & 0xFF) as i16,
+                );
+                let b1_vec = _mm_set_epi16(
+                    ((c1_7 >> 16) & 0xFF) as i16,
+                    ((c1_6 >> 16) & 0xFF) as i16,
+                    ((c1_5 >> 16) & 0xFF) as i16,
+                    ((c1_4 >> 16) & 0xFF) as i16,
+                    ((c1_3 >> 16) & 0xFF) as i16,
+                    ((c1_2 >> 16) & 0xFF) as i16,
+                    ((c1_1 >> 16) & 0xFF) as i16,
+                    ((c1_0 >> 16) & 0xFF) as i16,
+                );
 
                 if !y_out1.is_empty() {
                     let y1_16 = _mm_add_epi16(
                         _mm_srli_epi16(
                             _mm_add_epi16(
-                                _mm_add_epi16(_mm_mullo_epi16(r1_vec, k66), _mm_mullo_epi16(g1_vec, k129)),
+                                _mm_add_epi16(
+                                    _mm_mullo_epi16(r1_vec, k66),
+                                    _mm_mullo_epi16(g1_vec, k129),
+                                ),
                                 _mm_add_epi16(_mm_mullo_epi16(b1_vec, k25), k128_16),
                             ),
                             8,
@@ -246,24 +305,63 @@ pub fn rgba_to_yuv420p(
                 let mask_even = _mm_set_epi16(0, -1, 0, -1, 0, -1, 0, -1);
                 let r_even = _mm_and_si128(r_sum0, mask_even);
                 let r_odd = _mm_srli_si128(r_sum0, 2);
-                let r_avg = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(r_even, r_odd), _mm_set1_epi16(2)), 2);
+                let r_avg = _mm_srli_epi16(
+                    _mm_add_epi16(_mm_add_epi16(r_even, r_odd), _mm_set1_epi16(2)),
+                    2,
+                );
 
                 let g_even = _mm_and_si128(g_sum0, mask_even);
                 let g_odd = _mm_srli_si128(g_sum0, 2);
-                let g_avg = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(g_even, g_odd), _mm_set1_epi16(2)), 2);
+                let g_avg = _mm_srli_epi16(
+                    _mm_add_epi16(_mm_add_epi16(g_even, g_odd), _mm_set1_epi16(2)),
+                    2,
+                );
 
                 let b_even = _mm_and_si128(b_sum0, mask_even);
                 let b_odd = _mm_srli_si128(b_sum0, 2);
-                let b_avg = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(b_even, b_odd), _mm_set1_epi16(2)), 2);
+                let b_avg = _mm_srli_epi16(
+                    _mm_add_epi16(_mm_add_epi16(b_even, b_odd), _mm_set1_epi16(2)),
+                    2,
+                );
 
-                let r_avg4 = _mm_set_epi16(0, 0, 0, 0, _mm_extract_epi16(r_avg, 6) as i16, _mm_extract_epi16(r_avg, 4) as i16, _mm_extract_epi16(r_avg, 2) as i16, _mm_extract_epi16(r_avg, 0) as i16);
-                let g_avg4 = _mm_set_epi16(0, 0, 0, 0, _mm_extract_epi16(g_avg, 6) as i16, _mm_extract_epi16(g_avg, 4) as i16, _mm_extract_epi16(g_avg, 2) as i16, _mm_extract_epi16(g_avg, 0) as i16);
-                let b_avg4 = _mm_set_epi16(0, 0, 0, 0, _mm_extract_epi16(b_avg, 6) as i16, _mm_extract_epi16(b_avg, 4) as i16, _mm_extract_epi16(b_avg, 2) as i16, _mm_extract_epi16(b_avg, 0) as i16);
+                let r_avg4 = _mm_set_epi16(
+                    0,
+                    0,
+                    0,
+                    0,
+                    _mm_extract_epi16(r_avg, 6) as i16,
+                    _mm_extract_epi16(r_avg, 4) as i16,
+                    _mm_extract_epi16(r_avg, 2) as i16,
+                    _mm_extract_epi16(r_avg, 0) as i16,
+                );
+                let g_avg4 = _mm_set_epi16(
+                    0,
+                    0,
+                    0,
+                    0,
+                    _mm_extract_epi16(g_avg, 6) as i16,
+                    _mm_extract_epi16(g_avg, 4) as i16,
+                    _mm_extract_epi16(g_avg, 2) as i16,
+                    _mm_extract_epi16(g_avg, 0) as i16,
+                );
+                let b_avg4 = _mm_set_epi16(
+                    0,
+                    0,
+                    0,
+                    0,
+                    _mm_extract_epi16(b_avg, 6) as i16,
+                    _mm_extract_epi16(b_avg, 4) as i16,
+                    _mm_extract_epi16(b_avg, 2) as i16,
+                    _mm_extract_epi16(b_avg, 0) as i16,
+                );
 
                 let u_16 = _mm_add_epi16(
                     _mm_srai_epi16(
                         _mm_add_epi16(
-                            _mm_sub_epi16(_mm_mullo_epi16(b_avg4, _mm_set1_epi16(112)), _mm_mullo_epi16(r_avg4, _mm_set1_epi16(38))),
+                            _mm_sub_epi16(
+                                _mm_mullo_epi16(b_avg4, _mm_set1_epi16(112)),
+                                _mm_mullo_epi16(r_avg4, _mm_set1_epi16(38)),
+                            ),
                             _mm_sub_epi16(k128_16, _mm_mullo_epi16(g_avg4, _mm_set1_epi16(74))),
                         ),
                         8,
@@ -274,7 +372,10 @@ pub fn rgba_to_yuv420p(
                 let v_16 = _mm_add_epi16(
                     _mm_srai_epi16(
                         _mm_add_epi16(
-                            _mm_sub_epi16(_mm_mullo_epi16(r_avg4, _mm_set1_epi16(112)), _mm_mullo_epi16(g_avg4, _mm_set1_epi16(94))),
+                            _mm_sub_epi16(
+                                _mm_mullo_epi16(r_avg4, _mm_set1_epi16(112)),
+                                _mm_mullo_epi16(g_avg4, _mm_set1_epi16(94)),
+                            ),
                             _mm_sub_epi16(k128_16, _mm_mullo_epi16(b_avg4, _mm_set1_epi16(18))),
                         ),
                         8,
@@ -303,10 +404,14 @@ pub fn rgba_to_yuv420p(
             let idx00 = x0 * 4;
             let idx01 = x1 * 4;
 
-            let (r00, g00, b00) = (row0_src[idx00] as i32, row0_src[idx00 + 1] as i32, row0_src[idx00 + 2] as i32);
-            let (r01, g01, b01) = (row0_src[idx01] as i32, row0_src[idx01 + 1] as i32, row0_src[idx01 + 2] as i32);
-            let (r10, g10, b10) = (row1_src[idx00] as i32, row1_src[idx00 + 1] as i32, row1_src[idx00 + 2] as i32);
-            let (r11, g11, b11) = (row1_src[idx01] as i32, row1_src[idx01 + 1] as i32, row1_src[idx01 + 2] as i32);
+            let (r00, g00, b00) =
+                (row0_src[idx00] as i32, row0_src[idx00 + 1] as i32, row0_src[idx00 + 2] as i32);
+            let (r01, g01, b01) =
+                (row0_src[idx01] as i32, row0_src[idx01 + 1] as i32, row0_src[idx01 + 2] as i32);
+            let (r10, g10, b10) =
+                (row1_src[idx00] as i32, row1_src[idx00 + 1] as i32, row1_src[idx00 + 2] as i32);
+            let (r11, g11, b11) =
+                (row1_src[idx01] as i32, row1_src[idx01 + 1] as i32, row1_src[idx01 + 2] as i32);
 
             y_out0[x0] = rgb_to_y(r00, g00, b00);
             if x0 + 1 < width {
@@ -353,18 +458,20 @@ pub fn rgba_to_yuv420p(
         for y in height..pad_height {
             let src_y = height - 1;
             let (src, dst) = y_plane.split_at_mut(y * pad_width);
-            dst[..pad_width].copy_from_slice(&src[src_y * pad_width..src_y * pad_width + pad_width]);
+            dst[..pad_width]
+                .copy_from_slice(&src[src_y * pad_width..src_y * pad_width + pad_width]);
         }
         let uv_h = (height + 1) / 2;
         let pad_uv_h = pad_height / 2;
         for y in uv_h..pad_uv_h {
             let src_y = uv_h - 1;
             let (src_u, dst_u) = u_plane.split_at_mut(y * uv_stride);
-            dst_u[..uv_stride].copy_from_slice(&src_u[src_y * uv_stride..src_y * uv_stride + uv_stride]);
+            dst_u[..uv_stride]
+                .copy_from_slice(&src_u[src_y * uv_stride..src_y * uv_stride + uv_stride]);
 
             let (src_v, dst_v) = v_plane.split_at_mut(y * uv_stride);
-            dst_v[..uv_stride].copy_from_slice(&src_v[src_y * uv_stride..src_y * uv_stride + uv_stride]);
+            dst_v[..uv_stride]
+                .copy_from_slice(&src_v[src_y * uv_stride..src_y * uv_stride + uv_stride]);
         }
     }
 }
-
