@@ -27,7 +27,6 @@ tempfile = "3.10.1"
   lto           = "fat"
   opt-level     = 3
   codegen-units = 1
-  panic         = "abort"
   strip         = "symbols"
   overflow-checks = true
 
