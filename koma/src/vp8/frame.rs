@@ -155,7 +155,7 @@ fn sum_bytes_16(slice: &[u8]) -> u32 {
         let zero = _mm_setzero_si128();
         let sad = _mm_sad_epu8(chunk, zero);
         let lo = _mm_cvtsi128_si32(sad) as u32;
-        let hi = _mm_extract_epi16(sad, 4) as u32;
+        let hi = _mm_extract_epi16::<4>(sad) as u32;
         lo + hi
     }
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
@@ -257,9 +257,9 @@ fn add_dc_and_clamp_4x4(res: &[i16; 16], dc: i16, dst: &mut [u8], dst_offset: us
         
         let ptr = dst.as_mut_ptr().add(dst_offset);
         let r0 = _mm_cvtsi128_si32(clamped) as u32;
-        let r1 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 4)) as u32;
-        let r2 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 8)) as u32;
-        let r3 = _mm_cvtsi128_si32(_mm_srli_si128(clamped, 12)) as u32;
+        let r1 = _mm_cvtsi128_si32(_mm_srli_si128::<4>(clamped)) as u32;
+        let r2 = _mm_cvtsi128_si32(_mm_srli_si128::<8>(clamped)) as u32;
+        let r3 = _mm_cvtsi128_si32(_mm_srli_si128::<12>(clamped)) as u32;
         
         (ptr as *mut u32).write_unaligned(r0);
         (ptr.add(stride) as *mut u32).write_unaligned(r1);
