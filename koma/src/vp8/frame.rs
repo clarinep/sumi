@@ -456,7 +456,8 @@ pub fn encode_lossy_frame(
     recon_y: &mut [u8],
     recon_u: &mut [u8],
     recon_v: &mut [u8],
-    vp8_entropy_buf: &mut Vec<u8>,
+    vp8_part0_buf: &mut Vec<u8>,
+    vp8_tokens_buf: &mut Vec<u8>,
     vp8_output_buf: &mut Vec<u8>,
     config: &EncoderConfig,
 ) {
@@ -471,35 +472,37 @@ pub fn encode_lossy_frame(
     let q_uv_dc = FastQuantizer::new(DC_QLOOKUP[q_idx]);
     let q_uv_ac = FastQuantizer::new(AC_QLOOKUP[q_idx]);
 
-    let mut bool_coder = BoolEncoder::new(vp8_entropy_buf);
+    // ==========================================
+    // Partition 0: Frame Headers & Intra Modes
+    // ==========================================
+    let mut part0_coder = BoolEncoder::new(vp8_part0_buf);
 
-    // Keyframe RFC 6386 header
     // 1. Color space & clamping (2 bits)
-    bool_coder.put_bit_equi(false); // color_space: 0 (YUV)
-    bool_coder.put_bit_equi(false); // clamping_type: 0 (clamping required)
+    part0_coder.put_bit_equi(false); // color_space: 0 (YUV)
+    part0_coder.put_bit_equi(false); // clamping_type: 0 (clamping required)
 
     // 2. Segmentation (1 bit)
-    bool_coder.put_bit_equi(false); // segmentation_enabled: 0
+    part0_coder.put_bit_equi(false); // segmentation_enabled: 0
 
     // 3. Loop filter header
-    bool_coder.put_bit_equi(false); // filter_type: 0 (normal)
-    bool_coder.put_literal(0, 6);   // loop_filter_level: 0
-    bool_coder.put_literal(0, 3);   // sharpness_level: 0
-    bool_coder.put_bit_equi(false); // loop_filter_adj_enable: 0
+    part0_coder.put_bit_equi(false); // filter_type: 0 (normal)
+    part0_coder.put_literal(0, 6);   // loop_filter_level: 0
+    part0_coder.put_literal(0, 3);   // sharpness_level: 0
+    part0_coder.put_bit_equi(false); // loop_filter_adj_enable: 0
 
-    // 4. Token partition count (2 bits)
-    bool_coder.put_literal(0, 2);   // log2_nbr_of_dct_partitions: 0 (1 partition)
+    // 4. Token partition count (2 bits) -> 0 means 1 DCT partition (2^0 = 1)
+    part0_coder.put_literal(0, 2);   // log2_nbr_of_dct_partitions: 0
 
     // 5. Dequantization indices
-    bool_coder.put_literal(q_idx as u32, 7); // yac_qi: 7 bits
-    bool_coder.put_bit_equi(false); // ydc_delta present: 0
-    bool_coder.put_bit_equi(false); // y2dc_delta present: 0
-    bool_coder.put_bit_equi(false); // y2ac_delta present: 0
-    bool_coder.put_bit_equi(false); // uvdc_delta present: 0
-    bool_coder.put_bit_equi(false); // uvac_delta present: 0
+    part0_coder.put_literal(q_idx as u32, 7); // yac_qi: 7 bits
+    part0_coder.put_bit_equi(false); // ydc_delta present: 0
+    part0_coder.put_bit_equi(false); // y2dc_delta present: 0
+    part0_coder.put_bit_equi(false); // y2ac_delta present: 0
+    part0_coder.put_bit_equi(false); // uvdc_delta present: 0
+    part0_coder.put_bit_equi(false); // uvac_delta present: 0
 
     // 6. Refresh entropy probs (1 bit)
-    bool_coder.put_bit_equi(false); // refresh_entropy_probs: 0
+    part0_coder.put_bit_equi(false); // refresh_entropy_probs: 0
 
     // 7. Token probability update
     for i in 0..4 {
@@ -507,14 +510,36 @@ pub fn encode_lossy_frame(
             for k in 0..3 {
                 for l in 0..11 {
                     let prob = crate::vp8::header_tables::COEFF_UPDATE_PROBS[i][j][k][l];
-                    bool_coder.put_bit(false, prob);
+                    part0_coder.put_bit(false, prob);
                 }
             }
         }
     }
 
     // 8. mb_no_skip_coeff (1 bit)
-    bool_coder.put_bit_equi(false); // mb_no_skip_coeff: 0 (no skipping macroblock flag)
+    part0_coder.put_bit_equi(false); // mb_no_skip_coeff: 0 (no skipping macroblock flag)
+
+    // 9. Macroblock Prediction Modes for all macroblocks in scanline order
+    for _mb_y in 0..mb_rows {
+        for _mb_x in 0..mb_cols {
+            // Intra-prediction mode = DC (0) via kf_ymode_tree (RFC 6386 Section 11.1)
+            // Node 0 (prob 145) -> 1, Node 1 (prob 156) -> 0, Node 2 (prob 163) -> 0 => DC_PRED
+            part0_coder.put_bit(true, 145);
+            part0_coder.put_bit(false, 156);
+            part0_coder.put_bit(false, 163);
+
+            // Chroma intra-prediction mode = DC (0) via uv_mode_tree (RFC 6386 Section 11.1)
+            // Node 0 (prob 142) -> 0 => DC_PRED
+            part0_coder.put_bit(false, 142);
+        }
+    }
+
+    part0_coder.finish();
+
+    // ==========================================
+    // Partition 1: DCT / WHT Residual Tokens
+    // ==========================================
+    let mut token_coder = BoolEncoder::new(vp8_tokens_buf);
 
     let mut y_dc_coeffs = [0i16; 16];
     let mut y_wht_coeffs = [0i16; 16];
@@ -556,12 +581,6 @@ pub fn encode_lossy_frame(
                 _ => 128,
             };
 
-            // Intra-prediction mode = DC (0) via kf_ymode_tree (RFC 6386 Section 11.1)
-            // Node 0 (prob 145) -> 1, Node 1 (prob 156) -> 0, Node 2 (prob 163) -> 0 => DC_PRED
-            bool_coder.put_bit(true, 145);
-            bool_coder.put_bit(false, 156);
-            bool_coder.put_bit(false, 163);
-
             // DC predictor for Chroma
             let mut sum_u = 0u32;
             let mut sum_v = 0u32;
@@ -590,10 +609,6 @@ pub fn encode_lossy_frame(
                 _ => 128,
             };
 
-            // Chroma intra-prediction mode = DC (0) via uv_mode_tree (RFC 6386 Section 11.1)
-            // Node 0 (prob 142) -> 0 => DC_PRED
-            bool_coder.put_bit(false, 142);
-
             // Fast Macroblock Flat-Field Check for Luma (SIMD 16-byte compare shortcut)
             let src_y_off = mb_y_px * y_stride + mb_x_px;
             let mut is_flat_luma = config.fast_anime_shortcuts;
@@ -609,9 +624,9 @@ pub fn encode_lossy_frame(
 
             if is_flat_luma {
                 // Completely skip 16 FDCTs + WHT + 16 IDCTs
-                bool_coder.put_bit(false, PROB_EOB); // Y2 EOB
+                token_coder.put_bit(false, PROB_EOB); // Y2 EOB
                 for _ in 0..16 {
-                    bool_coder.put_bit(false, PROB_EOB); // Subblock EOB
+                    token_coder.put_bit(false, PROB_EOB); // Subblock EOB
                 }
                 for y in 0..16 {
                     let r_off = (mb_y_px + y) * y_stride + mb_x_px;
@@ -634,7 +649,7 @@ pub fn encode_lossy_frame(
                 quantize_dequantize_block(&y_wht_coeffs, &q_y2_dc, &q_y2_ac, &mut y_q_wht, &mut y_deq_wht);
                 inverse_wht_4x4(&y_deq_wht, &mut y_rec_dc);
 
-                encode_coeffs_block(&y_q_wht, 0, &mut bool_coder);
+                encode_coeffs_block(&y_q_wht, 0, &mut token_coder);
 
                 for blk in 0..16 {
                     let blk_x = (blk & 3) * 4;
@@ -642,7 +657,7 @@ pub fn encode_lossy_frame(
 
                     let mut dequant = [0i16; 16];
                     quantize_dequantize_y1_ac(&sub_coeffs[blk], &q_y1_ac, y_rec_dc[blk], &mut sub_q[blk], &mut dequant);
-                    encode_coeffs_block(&sub_q[blk], 1, &mut bool_coder);
+                    encode_coeffs_block(&sub_q[blk], 1, &mut token_coder);
 
                     let mut rec_res = [0i16; 16];
                     idct_4x4(&dequant, &mut rec_res);
@@ -676,7 +691,7 @@ pub fn encode_lossy_frame(
 
                 if is_flat_uv {
                     for _ in 0..4 {
-                        bool_coder.put_bit(false, PROB_EOB);
+                        token_coder.put_bit(false, PROB_EOB);
                     }
                     for y in 0..8 {
                         let r_off = (uv_y_px + y) * uv_stride + uv_x_px;
@@ -699,7 +714,7 @@ pub fn encode_lossy_frame(
 
                         fdct_4x4(&res, &mut coeffs);
                         quantize_dequantize_block(&coeffs, &q_uv_dc, &q_uv_ac, &mut q_coeffs, &mut dequant);
-                        encode_coeffs_block(&q_coeffs, 0, &mut bool_coder);
+                        encode_coeffs_block(&q_coeffs, 0, &mut token_coder);
 
                         idct_4x4(&dequant, &mut rec_res);
 
@@ -711,27 +726,41 @@ pub fn encode_lossy_frame(
         }
     }
 
-    bool_coder.finish();
+    token_coder.finish();
 
-    let entropy_len = vp8_entropy_buf.len();
+    // ==========================================
+    // Assemble Final VP8 Keyframe Frame Buffer
+    // ==========================================
+    let part0_len = vp8_part0_buf.len();
+    let tokens_len = vp8_tokens_buf.len();
+    let total_len = 10 + part0_len + tokens_len;
+
     vp8_output_buf.clear();
-    vp8_output_buf.reserve(10 + entropy_len);
+    vp8_output_buf.reserve(total_len);
 
-    // Frame tag (3 bytes LE)
-    let tag = ((entropy_len as u32) << 5) | 0x10;
+    // Frame tag (3 bytes LE):
+    // bit 0: key_frame = 0
+    // bits 1-3: version = 0
+    // bit 4: show_frame = 1
+    // bits 5-23: first_part_size = part0_len
+    let tag = ((part0_len as u32) << 5) | 0x10;
     vp8_output_buf.push((tag & 0xFF) as u8);
     vp8_output_buf.push(((tag >> 8) & 0xFF) as u8);
     vp8_output_buf.push(((tag >> 16) & 0xFF) as u8);
 
-    // RFC 6386 magic start code
+    // RFC 6386 magic start code (0x9D, 0x01, 0x2A)
     vp8_output_buf.extend_from_slice(&VP8_START_CODE);
 
-    // Dimensions
+    // Dimensions (4 bytes LE)
     vp8_output_buf.push((width & 0xFF) as u8);
     vp8_output_buf.push(((width >> 8) & 0x3F) as u8);
     vp8_output_buf.push((height & 0xFF) as u8);
     vp8_output_buf.push(((height >> 8) & 0x3F) as u8);
 
-    vp8_output_buf.extend_from_slice(vp8_entropy_buf);
+    // Partition 0 payload
+    vp8_output_buf.extend_from_slice(vp8_part0_buf);
+
+    // Partition 1 (Tokens) payload
+    vp8_output_buf.extend_from_slice(vp8_tokens_buf);
 }
 
