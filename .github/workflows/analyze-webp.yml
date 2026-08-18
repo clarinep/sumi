@@ -1,0 +1,44 @@
+name: Analyze Generated WebP
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_path:
+        description: "Path to the WebP file to inspect"
+        required: false
+        default: "generated/drop_1787042721.webp"
+  push:
+    paths:
+      - 'generated/**'
+      - 'koma/**'
+      - 'sumi/**'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run WebP Bitstream & Chunk Analyzer
+        run: |
+          TARGET_FILE="${{ github.event.inputs.file_path || 'generated/drop_1787042721.webp' }}"
+          if [ -f "$TARGET_FILE" ]; then
+            python3 scripts/analyze_webp.py "$TARGET_FILE"
+          else
+            echo "Specified file '$TARGET_FILE' not found. Scanning for any WebP in generated/..."
+            python3 scripts/analyze_webp.py
+          fi
+
+      - name: Upload WebP Analysis Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-webp-files
+          path: generated/*.webp
+          if-no-files-found: ignore
