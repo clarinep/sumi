@@ -1,6 +1,6 @@
-use koma::vp8::bool_coder::BoolEncoder;
+//! RFC 6386 entropy and coefficient probability update tables.
 
-const COEFF_UPDATE_PROBS: [[[[u8; 11]; 3]; 8]; 4] = [
+pub const COEFF_UPDATE_PROBS: [[[[u8; 11]; 3]; 8]; 4] = [
     [
         [
             [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255],
