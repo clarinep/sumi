@@ -5,9 +5,9 @@
 
 use crate::vp8::bool_coder::BoolEncoder;
 use crate::vp8::config::EncoderConfig;
+use crate::vp8::header_tables::COEFFS_PROBA0;
 use crate::vp8::tables::{
-    AC_QLOOKUP, DC_QLOOKUP, PCAT1, PCAT2, PCAT3, PROB_EOB, PROB_ONE, PROB_TWO, PROB_ZERO,
-    VP8_START_CODE, ZIGZAG,
+    AC_QLOOKUP, DC_QLOOKUP, KBANDS, PCAT3, PCAT4, PCAT5, PCAT6, VP8_START_CODE, ZIGZAG,
 };
 use crate::vp8::transform::{fdct_4x4, forward_wht_4x4, idct_4x4, inverse_wht_4x4};
 
@@ -313,132 +313,128 @@ fn quantize_dequantize_y1_ac(
     }
 }
 
-/// Encodes quantized AC/DC transform coefficients into the arithmetic boolean bitstream.
+/// Encodes a 4x4 block of DCT / WHT transform coefficients into the VP8 token bitstream.
+/// - `coeff_type`: 0 for Y2 (WHT DC of 16x16 macroblock), 1 for Y1 (16 AC 4x4 blocks), 2 for UV (Chroma).
+/// - `first`: 0 for Y2 and UV blocks, 1 for Y1 blocks (since DC is stored in Y2).
+/// - `coeffs`: 16 quantized coefficients in 4x4 frequency matrix order (coeffs[0] = DC).
 #[inline(always)]
-pub fn encode_coeffs_block(coeffs: &[i16; 16], start_idx: usize, bool_coder: &mut BoolEncoder) {
-    // Fast SIMD check if all coefficients from start_idx to 15 are zero
-    let is_all_zero = {
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            let v0 = vld1q_s16(coeffs.as_ptr());
-            let v1 = vld1q_s16(coeffs.as_ptr().add(8));
-            let zero = vdupq_n_s16(0);
-            let eq0 = vceqq_s16(v0, zero);
-            let eq1 = vceqq_s16(v1, zero);
-            if start_idx == 0 {
-                let and = vandq_u16(eq0, eq1);
-                vminvq_u16(and) == 0xFFFF
-            } else {
-                let eq0_masked = vsetq_lane_u16(0xFFFF, eq0, 0);
-                let and = vandq_u16(eq0_masked, eq1);
-                vminvq_u16(and) == 0xFFFF
-            }
-        }
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            let v0 = _mm_loadu_si128(coeffs.as_ptr() as *const __m128i);
-            let v1 = _mm_loadu_si128(coeffs.as_ptr().add(8) as *const __m128i);
-            let zero = _mm_setzero_si128();
-            let eq0 = _mm_cmpeq_epi16(v0, zero);
-            let eq1 = _mm_cmpeq_epi16(v1, zero);
-            let mask0 = _mm_movemask_epi8(eq0);
-            let mask1 = _mm_movemask_epi8(eq1);
-            if start_idx == 0 {
-                mask0 == 0xFFFF && mask1 == 0xFFFF
-            } else {
-                (mask0 | 0x0003) == 0xFFFF && mask1 == 0xFFFF
-            }
-        }
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            coeffs[start_idx..].iter().all(|&c| c == 0)
-        }
-    };
-
-    if is_all_zero {
-        bool_coder.put_bit(false, PROB_EOB);
-        return;
-    }
-
-    let mut last_nz = -1i32;
-    for i in (start_idx..16).rev() {
+pub fn encode_coeffs_block(
+    coeffs: &[i16; 16],
+    coeff_type: usize,
+    first: usize,
+    bool_coder: &mut BoolEncoder,
+) {
+    let mut last = -1i32;
+    for i in (first..16).rev() {
         if coeffs[ZIGZAG[i]] != 0 {
-            last_nz = i as i32;
+            last = i as i32;
             break;
         }
     }
 
-    if last_nz < 0 {
-        bool_coder.put_bit(false, PROB_EOB);
+    let mut n = first;
+    let mut p = &COEFFS_PROBA0[coeff_type][KBANDS[n]][0];
+
+    if last < 0 {
+        bool_coder.put_bit(false, p[0]); // EOB
         return;
     }
 
-    let end_idx = last_nz as usize;
-    for i in start_idx..=end_idx {
-        let val = coeffs[ZIGZAG[i]];
-        if val == 0 {
-            bool_coder.put_bit(true, PROB_EOB);
-            bool_coder.put_bit(false, PROB_ZERO);
+    bool_coder.put_bit(true, p[0]); // Has non-zero coefficients
+
+    while n < 16 {
+        let c = coeffs[ZIGZAG[n]];
+        let v = c.unsigned_abs() as u32;
+        let sign = c < 0;
+        n += 1;
+
+        if v == 0 {
+            bool_coder.put_bit(false, p[1]);
+            p = &COEFFS_PROBA0[coeff_type][KBANDS[n]][0];
+            continue;
+        }
+
+        bool_coder.put_bit(true, p[1]);
+        let next_ctx = if v == 1 {
+            bool_coder.put_bit(false, p[2]);
+            1
         } else {
-            bool_coder.put_bit(true, PROB_EOB);
-            bool_coder.put_bit(true, PROB_ZERO);
-            let abs_val = val.unsigned_abs() as u32;
-            let sign = val < 0;
-
-            match abs_val {
-                1 => {
-                    bool_coder.put_bit(false, PROB_ONE);
+            bool_coder.put_bit(true, p[2]);
+            if v <= 4 {
+                bool_coder.put_bit(false, p[3]);
+                if v == 2 {
+                    bool_coder.put_bit(false, p[4]);
+                } else {
+                    bool_coder.put_bit(true, p[4]);
+                    bool_coder.put_bit(v == 4, p[5]);
                 }
-                2 => {
-                    bool_coder.put_bit(true, PROB_ONE);
-                    bool_coder.put_bit(false, PROB_TWO);
+            } else if v <= 10 {
+                bool_coder.put_bit(true, p[3]);
+                bool_coder.put_bit(false, p[6]);
+                if v <= 6 {
+                    bool_coder.put_bit(false, p[7]);
+                    bool_coder.put_bit(v == 6, 159);
+                } else {
+                    bool_coder.put_bit(true, p[7]);
+                    bool_coder.put_bit((v - 7) >= 2, 165);
+                    bool_coder.put_bit(((v - 7) & 1) != 0, 145);
                 }
-                3..=4 => {
-                    bool_coder.put_bit(true, PROB_ONE);
-                    bool_coder.put_bit(true, PROB_TWO);
-                    bool_coder.put_bit(false, 159);
-                    bool_coder.put_bit_equi(abs_val == 4);
-                }
-                5..=6 => {
-                    // Category 1: 5-6 (base 5)
-                    bool_coder.put_bit(true, PROB_ONE);
-                    bool_coder.put_bit(true, PROB_TWO);
-                    bool_coder.put_bit(true, 159);
-                    bool_coder.put_bit(abs_val == 6, PCAT1[0]);
-                }
-                7..=10 => {
-                    // Category 2: 7-10 (base 7)
-                    bool_coder.put_bit(true, PROB_ONE);
-                    bool_coder.put_bit(true, PROB_TWO);
-                    bool_coder.put_bit(true, 159);
-                    let diff = abs_val - 7;
-                    bool_coder.put_bit((diff & 2) != 0, PCAT2[0]);
-                    bool_coder.put_bit((diff & 1) != 0, PCAT2[1]);
-                }
-                11..=18 => {
-                    // Category 3: 11-18 (base 11)
-                    bool_coder.put_bit(true, PROB_ONE);
-                    bool_coder.put_bit(true, PROB_TWO);
-                    bool_coder.put_bit(true, 159);
-                    let diff = abs_val - 11;
-                    bool_coder.put_bit((diff & 4) != 0, PCAT3[0]);
-                    bool_coder.put_bit((diff & 2) != 0, PCAT3[1]);
-                    bool_coder.put_bit((diff & 1) != 0, PCAT3[2]);
-                }
-                _ => {
-                    // Large AC/DC coefficients
-                    bool_coder.put_bit(true, PROB_ONE);
-                    bool_coder.put_bit(true, PROB_TWO);
-                    bool_coder.put_bit(true, 159);
-                    bool_coder.put_literal(abs_val, 11);
+            } else {
+                bool_coder.put_bit(true, p[3]);
+                bool_coder.put_bit(true, p[6]);
+                let res = v - 3;
+                if res < 16 {
+                    // Category 3 (3 bits: base 8..15)
+                    bool_coder.put_bit(false, p[8]);
+                    bool_coder.put_bit(false, p[9]);
+                    let val = res - 8;
+                    bool_coder.put_bit((val & 4) != 0, PCAT3[0]);
+                    bool_coder.put_bit((val & 2) != 0, PCAT3[1]);
+                    bool_coder.put_bit((val & 1) != 0, PCAT3[2]);
+                } else if res < 32 {
+                    // Category 4 (4 bits: base 16..31)
+                    bool_coder.put_bit(false, p[8]);
+                    bool_coder.put_bit(true, p[9]);
+                    let val = res - 16;
+                    bool_coder.put_bit((val & 8) != 0, PCAT4[0]);
+                    bool_coder.put_bit((val & 4) != 0, PCAT4[1]);
+                    bool_coder.put_bit((val & 2) != 0, PCAT4[2]);
+                    bool_coder.put_bit((val & 1) != 0, PCAT4[3]);
+                } else if res < 64 {
+                    // Category 5 (5 bits: base 32..63)
+                    bool_coder.put_bit(true, p[8]);
+                    bool_coder.put_bit(false, p[10]);
+                    let val = res - 32;
+                    bool_coder.put_bit((val & 16) != 0, PCAT5[0]);
+                    bool_coder.put_bit((val & 8) != 0, PCAT5[1]);
+                    bool_coder.put_bit((val & 4) != 0, PCAT5[2]);
+                    bool_coder.put_bit((val & 2) != 0, PCAT5[3]);
+                    bool_coder.put_bit((val & 1) != 0, PCAT5[4]);
+                } else {
+                    // Category 6 (11 bits: base 64..2047)
+                    bool_coder.put_bit(true, p[8]);
+                    bool_coder.put_bit(true, p[10]);
+                    let val = (res - 64).min(2047);
+                    for (bit_idx, &prob) in PCAT6.iter().enumerate() {
+                        bool_coder.put_bit(((val >> (10 - bit_idx)) & 1) != 0, prob);
+                    }
                 }
             }
+            2
+        };
 
-            bool_coder.put_bit_equi(sign);
+        bool_coder.put_bit_equi(sign);
 
-            if i == end_idx {
-                bool_coder.put_bit(false, PROB_EOB);
-            }
+        if n == 16 {
+            return;
+        }
+
+        p = &COEFFS_PROBA0[coeff_type][KBANDS[n]][next_ctx];
+        if (n as i32) <= last {
+            bool_coder.put_bit(true, p[0]);
+        } else {
+            bool_coder.put_bit(false, p[0]);
+            return;
         }
     }
 }
@@ -624,9 +620,9 @@ pub fn encode_lossy_frame(
 
             if is_flat_luma {
                 // Completely skip 16 FDCTs + WHT + 16 IDCTs
-                token_coder.put_bit(false, PROB_EOB); // Y2 EOB
+                token_coder.put_bit(false, COEFFS_PROBA0[0][0][0][0]); // Y2 EOB (coeff_type=0, band=0, ctx=0)
                 for _ in 0..16 {
-                    token_coder.put_bit(false, PROB_EOB); // Subblock EOB
+                    token_coder.put_bit(false, COEFFS_PROBA0[1][1][0][0]); // Subblock EOB (coeff_type=1, band=1, ctx=0)
                 }
                 for y in 0..16 {
                     let r_off = (mb_y_px + y) * y_stride + mb_x_px;
@@ -649,7 +645,7 @@ pub fn encode_lossy_frame(
                 quantize_dequantize_block(&y_wht_coeffs, &q_y2_dc, &q_y2_ac, &mut y_q_wht, &mut y_deq_wht);
                 inverse_wht_4x4(&y_deq_wht, &mut y_rec_dc);
 
-                encode_coeffs_block(&y_q_wht, 0, &mut token_coder);
+                encode_coeffs_block(&y_q_wht, 0, 0, &mut token_coder);
 
                 for blk in 0..16 {
                     let blk_x = (blk & 3) * 4;
@@ -657,7 +653,7 @@ pub fn encode_lossy_frame(
 
                     let mut dequant = [0i16; 16];
                     quantize_dequantize_y1_ac(&sub_coeffs[blk], &q_y1_ac, y_rec_dc[blk], &mut sub_q[blk], &mut dequant);
-                    encode_coeffs_block(&sub_q[blk], 1, &mut token_coder);
+                    encode_coeffs_block(&sub_q[blk], 1, 1, &mut token_coder);
 
                     let mut rec_res = [0i16; 16];
                     idct_4x4(&dequant, &mut rec_res);
@@ -691,7 +687,7 @@ pub fn encode_lossy_frame(
 
                 if is_flat_uv {
                     for _ in 0..4 {
-                        token_coder.put_bit(false, PROB_EOB);
+                        token_coder.put_bit(false, COEFFS_PROBA0[2][0][0][0]); // UV EOB (coeff_type=2, band=0, ctx=0)
                     }
                     for y in 0..8 {
                         let r_off = (uv_y_px + y) * uv_stride + uv_x_px;
@@ -714,7 +710,7 @@ pub fn encode_lossy_frame(
 
                         fdct_4x4(&res, &mut coeffs);
                         quantize_dequantize_block(&coeffs, &q_uv_dc, &q_uv_ac, &mut q_coeffs, &mut dequant);
-                        encode_coeffs_block(&q_coeffs, 0, &mut token_coder);
+                        encode_coeffs_block(&q_coeffs, 2, 0, &mut token_coder);
 
                         idct_4x4(&dequant, &mut rec_res);
 
