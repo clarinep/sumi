@@ -474,20 +474,47 @@ pub fn encode_lossy_frame(
     let mut bool_coder = BoolEncoder::new(vp8_entropy_buf);
 
     // Keyframe RFC 6386 header
-    bool_coder.put_bit_equi(false); // YUV
-    bool_coder.put_bit_equi(false); // Normal clamping
-    bool_coder.put_bit_equi(false); // No segmentation
-    bool_coder.put_bit_equi(false); // Filter type: 0
-    bool_coder.put_literal(0, 6);   // Filter level
-    bool_coder.put_literal(0, 3);   // Sharpness
-    bool_coder.put_literal(q_idx as u32, 7); // Base q_index
-    bool_coder.put_bit_equi(false); // No delta_q
-    bool_coder.put_bit_equi(false);
-    bool_coder.put_bit_equi(false);
-    bool_coder.put_bit_equi(false);
-    bool_coder.put_bit_equi(false);
-    bool_coder.put_bit_equi(false); // No refresh probs
-    bool_coder.put_bit_equi(false); // mb_no_skip_coeff: 0 (Keyframe header)
+    // 1. Color space & clamping (2 bits)
+    bool_coder.put_bit_equi(false); // color_space: 0 (YUV)
+    bool_coder.put_bit_equi(false); // clamping_type: 0 (clamping required)
+
+    // 2. Segmentation (1 bit)
+    bool_coder.put_bit_equi(false); // segmentation_enabled: 0
+
+    // 3. Loop filter header
+    bool_coder.put_bit_equi(false); // filter_type: 0 (normal)
+    bool_coder.put_literal(0, 6);   // loop_filter_level: 0
+    bool_coder.put_literal(0, 3);   // sharpness_level: 0
+    bool_coder.put_bit_equi(false); // loop_filter_adj_enable: 0
+
+    // 4. Token partition count (2 bits)
+    bool_coder.put_literal(0, 2);   // log2_nbr_of_dct_partitions: 0 (1 partition)
+
+    // 5. Dequantization indices
+    bool_coder.put_literal(q_idx as u32, 7); // yac_qi: 7 bits
+    bool_coder.put_bit_equi(false); // ydc_delta present: 0
+    bool_coder.put_bit_equi(false); // y2dc_delta present: 0
+    bool_coder.put_bit_equi(false); // y2ac_delta present: 0
+    bool_coder.put_bit_equi(false); // uvdc_delta present: 0
+    bool_coder.put_bit_equi(false); // uvac_delta present: 0
+
+    // 6. Refresh entropy probs (1 bit)
+    bool_coder.put_bit_equi(false); // refresh_entropy_probs: 0
+
+    // 7. Token probability update
+    for i in 0..4 {
+        for j in 0..8 {
+            for k in 0..3 {
+                for l in 0..11 {
+                    let prob = crate::vp8::header_tables::COEFF_UPDATE_PROBS[i][j][k][l];
+                    bool_coder.put_bit(false, prob);
+                }
+            }
+        }
+    }
+
+    // 8. mb_no_skip_coeff (1 bit)
+    bool_coder.put_bit_equi(false); // mb_no_skip_coeff: 0 (no skipping macroblock flag)
 
     let mut y_dc_coeffs = [0i16; 16];
     let mut y_wht_coeffs = [0i16; 16];
