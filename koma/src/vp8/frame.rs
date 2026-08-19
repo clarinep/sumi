@@ -25,6 +25,7 @@ use std::arch::aarch64::*;
 pub struct FastQuantizer {
     q: i16,
     inv_q: u64,
+    round_offset: u64,
 }
 
 impl FastQuantizer {
@@ -33,14 +34,15 @@ impl FastQuantizer {
         let q = if q < 1 { 1 } else { q };
         // Fixed-point reciprocal: (1 << 32) / q
         let inv_q = ((1u64 << 32) + (q as u64 / 2)) / (q as u64);
-        Self { q, inv_q }
+        let round_offset = (q as u64) / 3;
+        Self { q, inv_q, round_offset }
     }
 
     /// Quantizes a signed 16-bit coefficient without `IDIV`.
     #[inline(always)]
     pub fn quantize(&self, coeff: i16) -> i16 {
         let abs_c = coeff.unsigned_abs() as u64;
-        let q_val = ((abs_c * self.inv_q) >> 32) as i16;
+        let q_val = (((abs_c + self.round_offset) * self.inv_q) >> 32) as i16;
         if coeff < 0 {
             -q_val
         } else {
@@ -468,7 +470,9 @@ pub fn encode_lossy_frame(
     let _q_y1_dc = FastQuantizer::new(DC_QLOOKUP[q_idx]);
     let q_y1_ac = FastQuantizer::new(AC_QLOOKUP[q_idx]);
     let q_y2_dc = FastQuantizer::new(DC_QLOOKUP[q_idx] * 2);
-    let q_y2_ac = FastQuantizer::new(AC_QLOOKUP[q_idx] * 155 / 100);
+    let mut y2ac = AC_QLOOKUP[q_idx] * 155 / 100;
+    if y2ac < 8 { y2ac = 8; }
+    let q_y2_ac = FastQuantizer::new(y2ac);
     let q_uv_dc = FastQuantizer::new(DC_QLOOKUP[q_idx]);
     let q_uv_ac = FastQuantizer::new(AC_QLOOKUP[q_idx]);
 
