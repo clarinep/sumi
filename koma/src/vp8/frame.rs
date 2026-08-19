@@ -314,16 +314,19 @@ fn quantize_dequantize_y1_ac(
 }
 
 /// Encodes a 4x4 block of DCT / WHT transform coefficients into the VP8 token bitstream.
-/// - `coeff_type`: 0 for Y2 (WHT DC of 16x16 macroblock), 1 for Y1 (16 AC 4x4 blocks), 2 for UV (Chroma).
+/// - `coeff_type`: 0 for Y1 (16 AC 4x4 blocks), 1 for Y2 (WHT DC of 16x16 macroblock), 2 for UV (Chroma).
 /// - `first`: 0 for Y2 and UV blocks, 1 for Y1 blocks (since DC is stored in Y2).
+/// - `context`: 0, 1, or 2 based on above and left neighboring block non-zero status.
 /// - `coeffs`: 16 quantized coefficients in 4x4 frequency matrix order (coeffs[0] = DC).
+/// Returns true if the block contains at least one non-zero coefficient.
 #[inline(always)]
 pub fn encode_coeffs_block(
     coeffs: &[i16; 16],
     coeff_type: usize,
     first: usize,
+    context: usize,
     bool_coder: &mut BoolEncoder,
-) {
+) -> bool {
     let mut last = -1i32;
     for i in (first..16).rev() {
         if coeffs[ZIGZAG[i]] != 0 {
@@ -333,11 +336,11 @@ pub fn encode_coeffs_block(
     }
 
     let mut n = first;
-    let mut p = &COEFFS_PROBA0[coeff_type][KBANDS[n]][0];
+    let mut p = &COEFFS_PROBA0[coeff_type][KBANDS[n]][context];
 
     if last < 0 {
         bool_coder.put_bit(false, p[0]); // EOB
-        return;
+        return false;
     }
 
     bool_coder.put_bit(true, p[0]); // Has non-zero coefficients
@@ -426,7 +429,7 @@ pub fn encode_coeffs_block(
         bool_coder.put_bit_equi(sign);
 
         if n == 16 {
-            return;
+            return true;
         }
 
         p = &COEFFS_PROBA0[coeff_type][KBANDS[n]][next_ctx];
@@ -434,9 +437,10 @@ pub fn encode_coeffs_block(
             bool_coder.put_bit(true, p[0]);
         } else {
             bool_coder.put_bit(false, p[0]);
-            return;
+            return true;
         }
     }
+    true
 }
 
 /// Encodes a lossy VP8 keyframe bitstream using pre-allocated scratch memory.
@@ -549,7 +553,17 @@ pub fn encode_lossy_frame(
     let y_stride = pad_width;
     let uv_stride = pad_width / 2;
 
+    let mut above_y2_nz = vec![0u8; mb_cols];
+    let mut above_y1_nz = vec![0u8; mb_cols * 4];
+    let mut above_u_nz = vec![0u8; mb_cols * 2];
+    let mut above_v_nz = vec![0u8; mb_cols * 2];
+
     for mb_y in 0..mb_rows {
+        let mut left_y2_nz = 0u8;
+        let mut left_y1_nz = [0u8; 4];
+        let mut left_u_nz = [0u8; 2];
+        let mut left_v_nz = [0u8; 2];
+
         for mb_x in 0..mb_cols {
             let mb_x_px = mb_x * 16;
             let mb_y_px = mb_y * 16;
@@ -620,9 +634,19 @@ pub fn encode_lossy_frame(
 
             if is_flat_luma {
                 // Completely skip 16 FDCTs + WHT + 16 IDCTs
-                token_coder.put_bit(false, COEFFS_PROBA0[0][0][0][0]); // Y2 EOB (coeff_type=0, band=0, ctx=0)
-                for _ in 0..16 {
-                    token_coder.put_bit(false, COEFFS_PROBA0[1][1][0][0]); // Subblock EOB (coeff_type=1, band=1, ctx=0)
+                let y2_ctx = (above_y2_nz[mb_x] + left_y2_nz) as usize;
+                token_coder.put_bit(false, COEFFS_PROBA0[1][0][y2_ctx][0]); // Y2 EOB (coeff_type=1, band=0)
+                above_y2_nz[mb_x] = 0;
+                left_y2_nz = 0;
+
+                for blk in 0..16 {
+                    let blk_x = blk & 3;
+                    let blk_y = blk >> 2;
+                    let col = mb_x * 4 + blk_x;
+                    let ctx = (above_y1_nz[col] + left_y1_nz[blk_y]) as usize;
+                    token_coder.put_bit(false, COEFFS_PROBA0[0][1][ctx][0]); // Subblock EOB (coeff_type=0, band=1)
+                    above_y1_nz[col] = 0;
+                    left_y1_nz[blk_y] = 0;
                 }
                 for y in 0..16 {
                     let r_off = (mb_y_px + y) * y_stride + mb_x_px;
@@ -645,15 +669,26 @@ pub fn encode_lossy_frame(
                 quantize_dequantize_block(&y_wht_coeffs, &q_y2_dc, &q_y2_ac, &mut y_q_wht, &mut y_deq_wht);
                 inverse_wht_4x4(&y_deq_wht, &mut y_rec_dc);
 
-                encode_coeffs_block(&y_q_wht, 0, 0, &mut token_coder);
+                let y2_ctx = (above_y2_nz[mb_x] + left_y2_nz) as usize;
+                let y2_nz = encode_coeffs_block(&y_q_wht, 1, 0, y2_ctx, &mut token_coder);
+                let y2_nz_u8 = if y2_nz { 1 } else { 0 };
+                above_y2_nz[mb_x] = y2_nz_u8;
+                left_y2_nz = y2_nz_u8;
 
                 for blk in 0..16 {
                     let blk_x = (blk & 3) * 4;
                     let blk_y = (blk >> 2) * 4;
+                    let sub_x = blk & 3;
+                    let sub_y = blk >> 2;
+                    let col = mb_x * 4 + sub_x;
+                    let ctx = (above_y1_nz[col] + left_y1_nz[sub_y]) as usize;
 
                     let mut dequant = [0i16; 16];
                     quantize_dequantize_y1_ac(&sub_coeffs[blk], &q_y1_ac, y_rec_dc[blk], &mut sub_q[blk], &mut dequant);
-                    encode_coeffs_block(&sub_q[blk], 1, 1, &mut token_coder);
+                    let sub_nz = encode_coeffs_block(&sub_q[blk], 0, 1, ctx, &mut token_coder);
+                    let sub_nz_u8 = if sub_nz { 1 } else { 0 };
+                    above_y1_nz[col] = sub_nz_u8;
+                    left_y1_nz[sub_y] = sub_nz_u8;
 
                     let mut rec_res = [0i16; 16];
                     idct_4x4(&dequant, &mut rec_res);
@@ -663,60 +698,123 @@ pub fn encode_lossy_frame(
                 }
             }
 
-            // Chroma U & V (4 blocks each)
+            // Chroma U
             let src_u_off = uv_y_px * uv_stride + uv_x_px;
-            let src_v_off = uv_y_px * uv_stride + uv_x_px;
-
-            for uv_plane in 0..2 {
-                let (src_p, recon_p, s_off, dc_val) = if uv_plane == 0 {
-                    (u_plane, &mut *recon_u, src_u_off, dc_u)
-                } else {
-                    (v_plane, &mut *recon_v, src_v_off, dc_v)
-                };
-
-                let mut is_flat_uv = config.fast_anime_shortcuts;
-                if is_flat_uv {
-                    for y in 0..8 {
-                        let s_row = &src_p[s_off + y * uv_stride..s_off + y * uv_stride + 8];
-                        if !is_flat_8(s_row, dc_val) {
-                            is_flat_uv = false;
-                            break;
-                        }
+            let mut is_flat_u = config.fast_anime_shortcuts;
+            if is_flat_u {
+                for y in 0..8 {
+                    let s_row = &u_plane[src_u_off + y * uv_stride..src_u_off + y * uv_stride + 8];
+                    if !is_flat_8(s_row, dc_u) {
+                        is_flat_u = false;
+                        break;
                     }
                 }
+            }
 
-                if is_flat_uv {
-                    for _ in 0..4 {
-                        token_coder.put_bit(false, COEFFS_PROBA0[2][0][0][0]); // UV EOB (coeff_type=2, band=0, ctx=0)
+            if is_flat_u {
+                for blk in 0..4 {
+                    let blk_x = blk & 1;
+                    let blk_y = blk >> 1;
+                    let col = mb_x * 2 + blk_x;
+                    let ctx = (above_u_nz[col] + left_u_nz[blk_y]) as usize;
+                    token_coder.put_bit(false, COEFFS_PROBA0[2][0][ctx][0]); // UV EOB (coeff_type=2, band=0)
+                    above_u_nz[col] = 0;
+                    left_u_nz[blk_y] = 0;
+                }
+                for y in 0..8 {
+                    let r_off = (uv_y_px + y) * uv_stride + uv_x_px;
+                    recon_u[r_off..r_off + 8].fill(dc_u);
+                }
+            } else {
+                let dc_val_i16 = dc_u as i16;
+                for blk in 0..4 {
+                    let blk_x = (blk & 1) * 4;
+                    let blk_y = (blk >> 1) * 4;
+                    let sub_x = blk & 1;
+                    let sub_y = blk >> 1;
+                    let col = mb_x * 2 + sub_x;
+                    let ctx = (above_u_nz[col] + left_u_nz[sub_y]) as usize;
+
+                    let mut res = [0i16; 16];
+                    let s_idx = src_u_off + blk_y * uv_stride + blk_x;
+                    sub_dc_4x4(u_plane, s_idx, uv_stride, dc_val_i16, &mut res);
+
+                    let mut coeffs = [0i16; 16];
+                    let mut q_coeffs = [0i16; 16];
+                    let mut dequant = [0i16; 16];
+                    let mut rec_res = [0i16; 16];
+
+                    fdct_4x4(&res, &mut coeffs);
+                    quantize_dequantize_block(&coeffs, &q_uv_dc, &q_uv_ac, &mut q_coeffs, &mut dequant);
+                    let uv_nz = encode_coeffs_block(&q_coeffs, 2, 0, ctx, &mut token_coder);
+                    let uv_nz_u8 = if uv_nz { 1 } else { 0 };
+                    above_u_nz[col] = uv_nz_u8;
+                    left_u_nz[sub_y] = uv_nz_u8;
+
+                    idct_4x4(&dequant, &mut rec_res);
+
+                    let r_idx = (uv_y_px + blk_y) * uv_stride + (uv_x_px + blk_x);
+                    add_dc_and_clamp_4x4(&rec_res, dc_val_i16, recon_u, r_idx, uv_stride);
+                }
+            }
+
+            // Chroma V
+            let src_v_off = uv_y_px * uv_stride + uv_x_px;
+            let mut is_flat_v = config.fast_anime_shortcuts;
+            if is_flat_v {
+                for y in 0..8 {
+                    let s_row = &v_plane[src_v_off + y * uv_stride..src_v_off + y * uv_stride + 8];
+                    if !is_flat_8(s_row, dc_v) {
+                        is_flat_v = false;
+                        break;
                     }
-                    for y in 0..8 {
-                        let r_off = (uv_y_px + y) * uv_stride + uv_x_px;
-                        recon_p[r_off..r_off + 8].fill(dc_val);
-                    }
-                } else {
-                    let dc_val_i16 = dc_val as i16;
-                    for blk in 0..4 {
-                        let blk_x = (blk & 1) * 4;
-                        let blk_y = (blk >> 1) * 4;
+                }
+            }
 
-                        let mut res = [0i16; 16];
-                        let s_idx = s_off + blk_y * uv_stride + blk_x;
-                        sub_dc_4x4(src_p, s_idx, uv_stride, dc_val_i16, &mut res);
+            if is_flat_v {
+                for blk in 0..4 {
+                    let blk_x = blk & 1;
+                    let blk_y = blk >> 1;
+                    let col = mb_x * 2 + blk_x;
+                    let ctx = (above_v_nz[col] + left_v_nz[blk_y]) as usize;
+                    token_coder.put_bit(false, COEFFS_PROBA0[2][0][ctx][0]); // UV EOB (coeff_type=2, band=0)
+                    above_v_nz[col] = 0;
+                    left_v_nz[blk_y] = 0;
+                }
+                for y in 0..8 {
+                    let r_off = (uv_y_px + y) * uv_stride + uv_x_px;
+                    recon_v[r_off..r_off + 8].fill(dc_v);
+                }
+            } else {
+                let dc_val_i16 = dc_v as i16;
+                for blk in 0..4 {
+                    let blk_x = (blk & 1) * 4;
+                    let blk_y = (blk >> 1) * 4;
+                    let sub_x = blk & 1;
+                    let sub_y = blk >> 1;
+                    let col = mb_x * 2 + sub_x;
+                    let ctx = (above_v_nz[col] + left_v_nz[sub_y]) as usize;
 
-                        let mut coeffs = [0i16; 16];
-                        let mut q_coeffs = [0i16; 16];
-                        let mut dequant = [0i16; 16];
-                        let mut rec_res = [0i16; 16];
+                    let mut res = [0i16; 16];
+                    let s_idx = src_v_off + blk_y * uv_stride + blk_x;
+                    sub_dc_4x4(v_plane, s_idx, uv_stride, dc_val_i16, &mut res);
 
-                        fdct_4x4(&res, &mut coeffs);
-                        quantize_dequantize_block(&coeffs, &q_uv_dc, &q_uv_ac, &mut q_coeffs, &mut dequant);
-                        encode_coeffs_block(&q_coeffs, 2, 0, &mut token_coder);
+                    let mut coeffs = [0i16; 16];
+                    let mut q_coeffs = [0i16; 16];
+                    let mut dequant = [0i16; 16];
+                    let mut rec_res = [0i16; 16];
 
-                        idct_4x4(&dequant, &mut rec_res);
+                    fdct_4x4(&res, &mut coeffs);
+                    quantize_dequantize_block(&coeffs, &q_uv_dc, &q_uv_ac, &mut q_coeffs, &mut dequant);
+                    let uv_nz = encode_coeffs_block(&q_coeffs, 2, 0, ctx, &mut token_coder);
+                    let uv_nz_u8 = if uv_nz { 1 } else { 0 };
+                    above_v_nz[col] = uv_nz_u8;
+                    left_v_nz[sub_y] = uv_nz_u8;
 
-                        let r_idx = (uv_y_px + blk_y) * uv_stride + (uv_x_px + blk_x);
-                        add_dc_and_clamp_4x4(&rec_res, dc_val_i16, recon_p, r_idx, uv_stride);
-                    }
+                    idct_4x4(&dequant, &mut rec_res);
+
+                    let r_idx = (uv_y_px + blk_y) * uv_stride + (uv_x_px + blk_x);
+                    add_dc_and_clamp_4x4(&rec_res, dc_val_i16, recon_v, r_idx, uv_stride);
                 }
             }
         }
