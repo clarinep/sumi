@@ -71,54 +71,6 @@ pub fn quality_to_q_index(quality: f32) -> usize {
     }
 }
 
-/// Checks if 16 contiguous bytes in memory match a target constant byte using SIMD.
-#[inline(always)]
-fn is_flat_16(slice: &[u8], target: u8) -> bool {
-    if slice.len() < 16 { return false; }
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        let chunk = vld1q_u8(slice.as_ptr());
-        let target_vec = vdupq_n_u8(target);
-        let eq = vceqq_u8(chunk, target_vec);
-        vminvq_u8(eq) == 0xFF
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        let chunk = _mm_loadu_si128(slice.as_ptr() as *const __m128i);
-        let target_vec = _mm_set1_epi8(target as i8);
-        let eq = _mm_cmpeq_epi8(chunk, target_vec);
-        _mm_movemask_epi8(eq) == 0xFFFF
-    }
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    {
-        slice[0] == target
-            && slice[1] == target
-            && slice[2] == target
-            && slice[3] == target
-            && slice[4] == target
-            && slice[5] == target
-            && slice[6] == target
-            && slice[7] == target
-            && slice[8] == target
-            && slice[9] == target
-            && slice[10] == target
-            && slice[11] == target
-            && slice[12] == target
-            && slice[13] == target
-            && slice[14] == target
-            && slice[15] == target
-    }
-}
-
-/// Checks if 8 contiguous bytes in memory match a target constant byte.
-#[inline(always)]
-fn is_flat_8(slice: &[u8], target: u8) -> bool {
-    if slice.len() < 8 { return false; }
-    let target_u64 = u64::from_ne_bytes([target; 8]);
-    let chunk_u64 = u64::from_ne_bytes(slice[..8].try_into().unwrap_or([0; 8]));
-    chunk_u64 == target_u64
-}
-
 /// Fast sum of 8 unsigned bytes using SIMD SAD or 64-bit word operations.
 #[inline(always)]
 fn sum_bytes_8(slice: &[u8]) -> u32 {
@@ -278,122 +230,6 @@ fn add_dc_and_clamp_4x4(res: &[i16; 16], dc: i16, dst: &mut [u8], dst_offset: us
             dst[r_idx + 2] = (dc + res[r_row + 2]).clamp(0, 255) as u8;
             dst[r_idx + 3] = (dc + res[r_row + 3]).clamp(0, 255) as u8;
         }
-    }
-}
-
-#[inline(always)]
-fn sub_pred_4x4(
-    src: &[u8],
-    src_offset: usize,
-    src_stride: usize,
-    pred: &[u8],
-    pred_offset: usize,
-    pred_stride: usize,
-    out: &mut [i16; 16],
-) {
-    for y in 0..4 {
-        let s_idx = src_offset + y * src_stride;
-        let p_idx = pred_offset + y * pred_stride;
-        let r_row = y * 4;
-        out[r_row] = (src[s_idx] as i16) - (pred[p_idx] as i16);
-        out[r_row + 1] = (src[s_idx + 1] as i16) - (pred[p_idx + 1] as i16);
-        out[r_row + 2] = (src[s_idx + 2] as i16) - (pred[p_idx + 2] as i16);
-        out[r_row + 3] = (src[s_idx + 3] as i16) - (pred[p_idx + 3] as i16);
-    }
-}
-
-#[inline(always)]
-fn add_pred_and_clamp_4x4(
-    res: &[i16; 16],
-    pred: &[u8],
-    pred_offset: usize,
-    pred_stride: usize,
-    dst: &mut [u8],
-    dst_offset: usize,
-    dst_stride: usize,
-) {
-    for y in 0..4 {
-        let p_row = pred_offset + y * pred_stride;
-        let r_idx = dst_offset + y * dst_stride;
-        let r_row = y * 4;
-        dst[r_idx] = ((pred[p_row] as i16) + res[r_row]).clamp(0, 255) as u8;
-        dst[r_idx + 1] = ((pred[p_row + 1] as i16) + res[r_row + 1]).clamp(0, 255) as u8;
-        dst[r_idx + 2] = ((pred[p_row + 2] as i16) + res[r_row + 2]).clamp(0, 255) as u8;
-        dst[r_idx + 3] = ((pred[p_row + 3] as i16) + res[r_row + 3]).clamp(0, 255) as u8;
-    }
-}
-
-#[inline(always)]
-fn build_pred_16x16(
-    mb_x: usize,
-    mb_y: usize,
-    mb_x_px: usize,
-    mb_y_px: usize,
-    y_stride: usize,
-    recon_y: &[u8],
-    pred: &mut [u8; 256],
-) {
-    if mb_y > 0 && mb_x > 0 {
-        let top_left = recon_y[(mb_y_px - 1) * y_stride + (mb_x_px - 1)] as i32;
-        let top_row = &recon_y[(mb_y_px - 1) * y_stride + mb_x_px..(mb_y_px - 1) * y_stride + mb_x_px + 16];
-        for y in 0..16 {
-            let left_val = recon_y[(mb_y_px + y) * y_stride + (mb_x_px - 1)] as i32;
-            let row_off = y * 16;
-            for x in 0..16 {
-                let top_val = top_row[x] as i32;
-                let val = (top_val + left_val - top_left).clamp(0, 255);
-                pred[row_off + x] = val as u8;
-            }
-        }
-    } else if mb_y > 0 {
-        let top_row = &recon_y[(mb_y_px - 1) * y_stride + mb_x_px..(mb_y_px - 1) * y_stride + mb_x_px + 16];
-        for y in 0..16 {
-            pred[y * 16..(y + 1) * 16].copy_from_slice(top_row);
-        }
-    } else if mb_x > 0 {
-        for y in 0..16 {
-            let left_val = recon_y[(mb_y_px + y) * y_stride + (mb_x_px - 1)];
-            pred[y * 16..(y + 1) * 16].fill(left_val);
-        }
-    } else {
-        pred.fill(128);
-    }
-}
-
-#[inline(always)]
-fn build_pred_8x8(
-    mb_x: usize,
-    mb_y: usize,
-    uv_x_px: usize,
-    uv_y_px: usize,
-    uv_stride: usize,
-    recon: &[u8],
-    pred: &mut [u8; 64],
-) {
-    if mb_y > 0 && mb_x > 0 {
-        let top_left = recon[(uv_y_px - 1) * uv_stride + (uv_x_px - 1)] as i32;
-        let top_row = &recon[(uv_y_px - 1) * uv_stride + uv_x_px..(uv_y_px - 1) * uv_stride + uv_x_px + 8];
-        for y in 0..8 {
-            let left_val = recon[(uv_y_px + y) * uv_stride + (uv_x_px - 1)] as i32;
-            let row_off = y * 8;
-            for x in 0..8 {
-                let top_val = top_row[x] as i32;
-                let val = (top_val + left_val - top_left).clamp(0, 255);
-                pred[row_off + x] = val as u8;
-            }
-        }
-    } else if mb_y > 0 {
-        let top_row = &recon[(uv_y_px - 1) * uv_stride + uv_x_px..(uv_y_px - 1) * uv_stride + uv_x_px + 8];
-        for y in 0..8 {
-            pred[y * 8..(y + 1) * 8].copy_from_slice(top_row);
-        }
-    } else if mb_x > 0 {
-        for y in 0..8 {
-            let left_val = recon[(uv_y_px + y) * uv_stride + (uv_x_px - 1)];
-            pred[y * 8..(y + 1) * 8].fill(left_val);
-        }
-    } else {
-        pred.fill(128);
     }
 }
 
@@ -640,43 +476,16 @@ pub fn encode_lossy_frame(
     part0_coder.put_bit_equi(false); // mb_no_skip_coeff: 0 (no skipping macroblock flag)
 
     // 9. Macroblock Prediction Modes for all macroblocks in scanline order
-    for mb_y in 0..mb_rows {
-        for mb_x in 0..mb_cols {
-            if mb_y > 0 && mb_x > 0 {
-                // TM_PRED (Mode 4 Luma, Mode 3 Chroma)
-                part0_coder.put_bit(true, 145);
-                part0_coder.put_bit(true, 156);
-                part0_coder.put_bit(true, 163);
-                part0_coder.put_bit(true, 128);
+    for _mb_y in 0..mb_rows {
+        for _mb_x in 0..mb_cols {
+            // Intra-prediction mode = DC (0) via kf_ymode_tree (RFC 6386 Section 11.1)
+            // Root (prob 145) -> 1, Node 1 (prob 156) -> 0 => DC_PRED (Mode 1)
+            part0_coder.put_bit(true, 145);
+            part0_coder.put_bit(false, 156);
 
-                part0_coder.put_bit(true, 142);
-                part0_coder.put_bit(true, 114);
-                part0_coder.put_bit(true, 183);
-            } else if mb_y > 0 {
-                // V_PRED (Mode 2 Luma, Mode 1 Chroma)
-                part0_coder.put_bit(true, 145);
-                part0_coder.put_bit(true, 156);
-                part0_coder.put_bit(false, 163);
-
-                part0_coder.put_bit(true, 142);
-                part0_coder.put_bit(false, 114);
-            } else if mb_x > 0 {
-                // H_PRED (Mode 3 Luma, Mode 2 Chroma)
-                part0_coder.put_bit(true, 145);
-                part0_coder.put_bit(true, 156);
-                part0_coder.put_bit(true, 163);
-                part0_coder.put_bit(false, 128);
-
-                part0_coder.put_bit(true, 142);
-                part0_coder.put_bit(true, 114);
-                part0_coder.put_bit(false, 183);
-            } else {
-                // DC_PRED (Mode 1 Luma, Mode 0 Chroma)
-                part0_coder.put_bit(true, 145);
-                part0_coder.put_bit(false, 156);
-
-                part0_coder.put_bit(false, 142);
-            }
+            // Chroma intra-prediction mode = DC (0) via uv_mode_tree (RFC 6386 Section 11.1)
+            // Node 0 (prob 142) -> 0 => DC_PRED
+            part0_coder.put_bit(false, 142);
         }
     }
 
@@ -716,19 +525,65 @@ pub fn encode_lossy_frame(
             let uv_x_px = mb_x * 8;
             let uv_y_px = mb_y * 8;
 
-            let mut pred_y = [0u8; 256];
-            build_pred_16x16(mb_x, mb_y, mb_x_px, mb_y_px, y_stride, recon_y, &mut pred_y);
+            // Fast DC predictor calculation for Luma using SIMD SAD
+            let mut sum_luma = 0u32;
+            let mut count_luma = 0u32;
+            if mb_y > 0 {
+                let top_off = (mb_y_px - 1) * y_stride + mb_x_px;
+                sum_luma += sum_bytes_16(&recon_y[top_off..top_off + 16]);
+                count_luma += 16;
+            }
+            if mb_x > 0 {
+                for y in 0..16 {
+                    let left_val = recon_y[(mb_y_px + y) * y_stride + (mb_x_px - 1)];
+                    sum_luma += left_val as u32;
+                }
+                count_luma += 16;
+            }
+            let dc_y = match count_luma {
+                32 => ((sum_luma + 16) >> 5) as u8,
+                16 => ((sum_luma + 8) >> 4) as u8,
+                _ => 128,
+            };
+
+            // DC predictor for Chroma
+            let mut sum_u = 0u32;
+            let mut sum_v = 0u32;
+            let mut count_uv = 0u32;
+            if mb_y > 0 {
+                let top_u_off = (uv_y_px - 1) * uv_stride + uv_x_px;
+                sum_u += sum_bytes_8(&recon_u[top_u_off..top_u_off + 8]);
+                sum_v += sum_bytes_8(&recon_v[top_u_off..top_u_off + 8]);
+                count_uv += 8;
+            }
+            if mb_x > 0 {
+                for y in 0..8 {
+                    sum_u += recon_u[(uv_y_px + y) * uv_stride + (uv_x_px - 1)] as u32;
+                    sum_v += recon_v[(uv_y_px + y) * uv_stride + (uv_x_px - 1)] as u32;
+                }
+                count_uv += 8;
+            }
+            let dc_u = match count_uv {
+                16 => ((sum_u + 8) >> 4) as u8,
+                8 => ((sum_u + 4) >> 3) as u8,
+                _ => 128,
+            };
+            let dc_v = match count_uv {
+                16 => ((sum_v + 8) >> 4) as u8,
+                8 => ((sum_v + 4) >> 3) as u8,
+                _ => 128,
+            };
 
             let src_y_off = mb_y_px * y_stride + mb_x_px;
+            let dc_val_i16 = dc_y as i16;
 
             // 16 Luma 4x4 subblocks
             for blk in 0..16 {
                 let blk_x = (blk & 3) * 4;
                 let blk_y = (blk >> 2) * 4;
-                let p_idx = blk_y * 16 + blk_x;
-                let s_idx = src_y_off + blk_y * y_stride + blk_x;
                 let mut res = [0i16; 16];
-                sub_pred_4x4(y_plane, s_idx, y_stride, &pred_y, p_idx, 16, &mut res);
+                let s_idx = src_y_off + blk_y * y_stride + blk_x;
+                sub_dc_4x4(y_plane, s_idx, y_stride, dc_val_i16, &mut res);
                 let has_diff = fdct_4x4(&res, &mut sub_coeffs[blk]);
                 y_dc_coeffs[blk] = if has_diff { sub_coeffs[blk][0] } else { 0 };
             }
@@ -746,7 +601,6 @@ pub fn encode_lossy_frame(
             for blk in 0..16 {
                 let blk_x = (blk & 3) * 4;
                 let blk_y = (blk >> 2) * 4;
-                let p_idx = blk_y * 16 + blk_x;
                 let sub_x = blk & 3;
                 let sub_y = blk >> 2;
                 let col = mb_x * 4 + sub_x;
@@ -763,26 +617,23 @@ pub fn encode_lossy_frame(
                 idct_4x4(&dequant, &mut rec_res);
 
                 let r_idx = (mb_y_px + blk_y) * y_stride + (mb_x_px + blk_x);
-                add_pred_and_clamp_4x4(&rec_res, &pred_y, p_idx, 16, recon_y, r_idx, y_stride);
+                add_dc_and_clamp_4x4(&rec_res, dc_val_i16, recon_y, r_idx, y_stride);
             }
 
             // Chroma U
-            let mut pred_u = [0u8; 64];
-            build_pred_8x8(mb_x, mb_y, uv_x_px, uv_y_px, uv_stride, recon_u, &mut pred_u);
             let src_u_off = uv_y_px * uv_stride + uv_x_px;
-
+            let dc_val_u = dc_u as i16;
             for blk in 0..4 {
                 let blk_x = (blk & 1) * 4;
                 let blk_y = (blk >> 1) * 4;
-                let p_u_idx = blk_y * 8 + blk_x;
-                let s_u_idx = src_u_off + blk_y * uv_stride + blk_x;
                 let sub_x = blk & 1;
                 let sub_y = blk >> 1;
                 let col = mb_x * 2 + sub_x;
                 let ctx = (above_u_nz[col] + left_u_nz[sub_y]) as usize;
 
                 let mut res = [0i16; 16];
-                sub_pred_4x4(u_plane, s_u_idx, uv_stride, &pred_u, p_u_idx, 8, &mut res);
+                let s_idx = src_u_off + blk_y * uv_stride + blk_x;
+                sub_dc_4x4(u_plane, s_idx, uv_stride, dc_val_u, &mut res);
 
                 let mut coeffs = [0i16; 16];
                 let mut q_coeffs = [0i16; 16];
@@ -799,26 +650,23 @@ pub fn encode_lossy_frame(
                 idct_4x4(&dequant, &mut rec_res);
 
                 let r_idx = (uv_y_px + blk_y) * uv_stride + (uv_x_px + blk_x);
-                add_pred_and_clamp_4x4(&rec_res, &pred_u, p_u_idx, 8, recon_u, r_idx, uv_stride);
+                add_dc_and_clamp_4x4(&rec_res, dc_val_u, recon_u, r_idx, uv_stride);
             }
 
             // Chroma V
-            let mut pred_v = [0u8; 64];
-            build_pred_8x8(mb_x, mb_y, uv_x_px, uv_y_px, uv_stride, recon_v, &mut pred_v);
             let src_v_off = uv_y_px * uv_stride + uv_x_px;
-
+            let dc_val_v = dc_v as i16;
             for blk in 0..4 {
                 let blk_x = (blk & 1) * 4;
                 let blk_y = (blk >> 1) * 4;
-                let p_v_idx = blk_y * 8 + blk_x;
-                let s_v_idx = src_v_off + blk_y * uv_stride + blk_x;
                 let sub_x = blk & 1;
                 let sub_y = blk >> 1;
                 let col = mb_x * 2 + sub_x;
                 let ctx = (above_v_nz[col] + left_v_nz[sub_y]) as usize;
 
                 let mut res = [0i16; 16];
-                sub_pred_4x4(v_plane, s_v_idx, uv_stride, &pred_v, p_v_idx, 8, &mut res);
+                let s_idx = src_v_off + blk_y * uv_stride + blk_x;
+                sub_dc_4x4(v_plane, s_idx, uv_stride, dc_val_v, &mut res);
 
                 let mut coeffs = [0i16; 16];
                 let mut q_coeffs = [0i16; 16];
@@ -835,7 +683,7 @@ pub fn encode_lossy_frame(
                 idct_4x4(&dequant, &mut rec_res);
 
                 let r_idx = (uv_y_px + blk_y) * uv_stride + (uv_x_px + blk_x);
-                add_pred_and_clamp_4x4(&rec_res, &pred_v, p_v_idx, 8, recon_v, r_idx, uv_stride);
+                add_dc_and_clamp_4x4(&rec_res, dc_val_v, recon_v, r_idx, uv_stride);
             }
         }
     }
