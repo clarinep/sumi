@@ -330,8 +330,19 @@ pub fn idct_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let o2 = vshrq_n_s32(vaddq_s32(vsubq_s32(row_b1, row_c1), k4), 3);
         let o3 = vshrq_n_s32(vaddq_s32(vsubq_s32(row_a1, row_d1), k4), 3);
 
-        let out01_16 = vcombine_s16(vmovn_s32(o0), vmovn_s32(o1));
-        let out23_16 = vcombine_s16(vmovn_s32(o2), vmovn_s32(o3));
+        // Transpose columns o0..o3 back into rows r0..r3
+        let trn0 = vzip1q_s32(o0, o2);
+        let trn1 = vzip2q_s32(o0, o2);
+        let trn2 = vzip1q_s32(o1, o3);
+        let trn3 = vzip2q_s32(o1, o3);
+
+        let r0 = vzip1q_s32(trn0, trn2);
+        let r1 = vzip2q_s32(trn0, trn2);
+        let r2 = vzip1q_s32(trn1, trn3);
+        let r3 = vzip2q_s32(trn1, trn3);
+
+        let out01_16 = vcombine_s16(vmovn_s32(r0), vmovn_s32(r1));
+        let out23_16 = vcombine_s16(vmovn_s32(r2), vmovn_s32(r3));
 
         vst1q_s16(output.as_mut_ptr(), out01_16);
         vst1q_s16(output.as_mut_ptr().add(8), out23_16);
@@ -416,8 +427,19 @@ pub fn idct_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let o2 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(row_b1, row_c1), k4), 3);
         let o3 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(row_a1, row_d1), k4), 3);
 
-        let out01_16 = _mm_packs_epi32(o0, o1);
-        let out23_16 = _mm_packs_epi32(o2, o3);
+        // Transpose columns o0..o3 back into rows r0..r3
+        let out_lo0 = _mm_unpacklo_epi32(o0, o1);
+        let out_hi0 = _mm_unpackhi_epi32(o0, o1);
+        let out_lo1 = _mm_unpacklo_epi32(o2, o3);
+        let out_hi1 = _mm_unpackhi_epi32(o2, o3);
+
+        let r0 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(out_lo0), _mm_castsi128_ps(out_lo1)));
+        let r1 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(out_lo1), _mm_castsi128_ps(out_lo0)));
+        let r2 = _mm_castps_si128(_mm_movelh_ps(_mm_castsi128_ps(out_hi0), _mm_castsi128_ps(out_hi1)));
+        let r3 = _mm_castps_si128(_mm_movehl_ps(_mm_castsi128_ps(out_hi1), _mm_castsi128_ps(out_hi0)));
+
+        let out01_16 = _mm_packs_epi32(r0, r1);
+        let out23_16 = _mm_packs_epi32(r2, r3);
 
         _mm_storeu_si128(output.as_mut_ptr() as *mut __m128i, out01_16);
         _mm_storeu_si128(output.as_mut_ptr().add(8) as *mut __m128i, out23_16);
