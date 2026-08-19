@@ -106,8 +106,8 @@ pub fn fdct_4x4(input: &[i16; 16], output: &mut [i16; 16]) -> bool {
         o3 = vmlsq_n_s32(o3, col_c1, 5352);
         o3 = vshrq_n_s32(o3, 16);
 
-        let out01_16 = vcombine_s16(vmovn_s32(o0), vmovn_s32(o1));
-        let out23_16 = vcombine_s16(vmovn_s32(o2), vmovn_s32(o3));
+        let out01_16 = vshrq_n_s16(vcombine_s16(vmovn_s32(o0), vmovn_s32(o1)), 1);
+        let out23_16 = vshrq_n_s16(vcombine_s16(vmovn_s32(o2), vmovn_s32(o3)), 1);
 
         vst1q_s16(output.as_mut_ptr(), out01_16);
         vst1q_s16(output.as_mut_ptr().add(8), out23_16);
@@ -191,8 +191,8 @@ pub fn fdct_4x4(input: &[i16; 16], output: &mut [i16; 16]) -> bool {
         let o1 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_d1_5352, col_c1_2217), _mm_set1_epi32(12000)), 16);
         let o3 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_d1_2217, col_c1_5352), _mm_set1_epi32(51000)), 16);
 
-        let out01_16 = _mm_packs_epi32(o0, o1);
-        let out23_16 = _mm_packs_epi32(o2, o3);
+        let out01_16 = _mm_srai_epi16(_mm_packs_epi32(o0, o1), 1);
+        let out23_16 = _mm_srai_epi16(_mm_packs_epi32(o2, o3), 1);
 
         _mm_storeu_si128(output.as_mut_ptr() as *mut __m128i, out01_16);
         _mm_storeu_si128(output.as_mut_ptr().add(8) as *mut __m128i, out23_16);
@@ -247,6 +247,10 @@ pub fn fdct_4x4(input: &[i16; 16], output: &mut [i16; 16]) -> bool {
             output[i + 4] = ((d1 * 5352 + c1 * 2217 + 12000) >> 16) as i16;
             output[i + 8] = ((a1 - b1 + 7) >> 3) as i16;
             output[i + 12] = ((d1 * 2217 - c1 * 5352 + 51000) >> 16) as i16;
+        }
+
+        for x in output.iter_mut() {
+            *x >>= 1;
         }
 
         true
@@ -566,11 +570,11 @@ pub fn forward_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let col_c1 = vsubq_s32(u1, u2);
         let col_d1 = vsubq_s32(u0, u3);
 
-        let k1 = vdupq_n_s32(1);
-        let o0 = vshrq_n_s32(vaddq_s32(vaddq_s32(col_a1, col_b1), k1), 1);
-        let o1 = vshrq_n_s32(vaddq_s32(vaddq_s32(col_c1, col_d1), k1), 1);
-        let o2 = vshrq_n_s32(vaddq_s32(vsubq_s32(col_a1, col_b1), k1), 1);
-        let o3 = vshrq_n_s32(vaddq_s32(vsubq_s32(col_d1, col_c1), k1), 1);
+        let k3 = vdupq_n_s32(3);
+        let o0 = vshrq_n_s32(vaddq_s32(vaddq_s32(col_a1, col_b1), k3), 3);
+        let o1 = vshrq_n_s32(vaddq_s32(vaddq_s32(col_c1, col_d1), k3), 3);
+        let o2 = vshrq_n_s32(vaddq_s32(vsubq_s32(col_a1, col_b1), k3), 3);
+        let o3 = vshrq_n_s32(vaddq_s32(vsubq_s32(col_d1, col_c1), k3), 3);
 
         let out01_16 = vcombine_s16(vmovn_s32(o0), vmovn_s32(o1));
         let out23_16 = vcombine_s16(vmovn_s32(o2), vmovn_s32(o3));
@@ -634,11 +638,11 @@ pub fn forward_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let col_c1 = _mm_sub_epi32(u1, u2);
         let col_d1 = _mm_sub_epi32(u0, u3);
 
-        let k1 = _mm_set1_epi32(1);
-        let o0 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_a1, col_b1), k1), 1);
-        let o1 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_c1, col_d1), k1), 1);
-        let o2 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_a1, col_b1), k1), 1);
-        let o3 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_d1, col_c1), k1), 1);
+        let k3 = _mm_set1_epi32(3);
+        let o0 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_a1, col_b1), k3), 3);
+        let o1 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_c1, col_d1), k3), 3);
+        let o2 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_a1, col_b1), k3), 3);
+        let o3 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_d1, col_c1), k3), 3);
 
         let out01_16 = _mm_packs_epi32(o0, o1);
         let out23_16 = _mm_packs_epi32(o2, o3);
@@ -667,10 +671,10 @@ pub fn forward_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
             let b1 = intermediate[i + 4] + intermediate[i + 8];
             let c1 = intermediate[i + 4] - intermediate[i + 8];
             let d1 = intermediate[i] - intermediate[i + 12];
-            output[i] = ((a1 + b1 + 1) >> 1) as i16;
-            output[i + 4] = ((c1 + d1 + 1) >> 1) as i16;
-            output[i + 8] = ((a1 - b1 + 1) >> 1) as i16;
-            output[i + 12] = ((d1 - c1 + 1) >> 1) as i16;
+            output[i] = ((a1 + b1 + 3) >> 3) as i16;
+            output[i + 4] = ((c1 + d1 + 3) >> 3) as i16;
+            output[i + 8] = ((a1 - b1 + 3) >> 3) as i16;
+            output[i + 12] = ((d1 - c1 + 3) >> 3) as i16;
         }
     }
 }
