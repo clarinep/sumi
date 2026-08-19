@@ -14,24 +14,49 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install rust
-      run: rustup toolchain install nightly
+      run: |
+        rustup toolchain install nightly --profile minimal
+        rustup default nightly
 
     - name: Build sumi
-      run: cargo +nightly build --release
+      run: |
+        if [ -f "sumi/Cargo.toml" ]; then
+          cargo +nightly build --release --manifest-path sumi/Cargo.toml
+        else
+          cargo +nightly build --release
+        fi
 
     - name: Start sumi server
       env:
-        CARDS_DIR: "assets"
         PORT: 3000
-        RUST_LOG: info
+        RUST_LOG: debug
+        RUST_BACKTRACE: 1
       run: |
-        ./target/release/sumi > sumi.log 2>&1 &
+        # Locate cards directory (either sumi/assets or assets)
+        if [ -d "sumi/assets" ]; then
+          export CARDS_DIR="$(pwd)/sumi/assets"
+        else
+          export CARDS_DIR="$(pwd)/assets"
+        fi
+        echo "Using CARDS_DIR: $CARDS_DIR"
+
+        # Locate compiled binary
+        if [ -f "./target/release/sumi" ]; then
+          SUMI_BIN="./target/release/sumi"
+        elif [ -f "./sumi/target/release/sumi" ]; then
+          SUMI_BIN="./sumi/target/release/sumi"
+        else
+          SUMI_BIN=$(find . -type f -name "sumi" -path "*/release/*" | head -n 1)
+        fi
+        echo "Using binary: $SUMI_BIN"
+
+        $SUMI_BIN > sumi.log 2>&1 &
         echo $! > sumi.pid
-        
-        # Wait for sumi to be healthy
+
+        # Wait for sumi to be healthy (checks both /metrics and /health)
         echo "Waiting for sumi to start..."
         for i in {1..30}; do
-          if curl -s http://127.0.0.1:3000/health > /dev/null 2>&1; then
+          if curl -s -f http://127.0.0.1:3000/metrics > /dev/null 2>&1 || curl -s -f http://127.0.0.1:3000/health > /dev/null 2>&1 || curl -s http://127.0.0.1:3000/ > /dev/null 2>&1; then
             echo "sumi is ready and listening on port 3000!"
             break
           fi
@@ -47,15 +72,26 @@ jobs:
       run: |
         mkdir -p generated
         
+        # Locate cards directory
+        if [ -d "sumi/assets" ]; then
+          SEARCH_DIR="sumi/assets"
+        else
+          SEARCH_DIR="assets"
+        fi
+
         # Find all .webp cards in assets folder
         CARDS=()
-        for f in $(find assets -type f -name "*.webp"); do
-          card_name=$(basename "$f" .webp)
-          CARDS+=("$card_name")
-        done
+        while IFS= read -r f; do
+          if [ -n "$f" ]; then
+            card_name=$(basename "$f" .webp)
+            CARDS+=("$card_name")
+          fi
+        done < <(find "$SEARCH_DIR" -type f -name "*.webp")
         
         if [ ${#CARDS[@]} -eq 0 ]; then
-          echo "Error: No cards (.webp) found in the assets folder."
+          echo "Error: No cards (.webp) found in '$SEARCH_DIR'."
+          echo "Directory contents of $SEARCH_DIR:"
+          ls -la "$SEARCH_DIR" || ls -la
           exit 1
         fi
         
@@ -91,9 +127,24 @@ jobs:
         if [ -f sumi.pid ]; then
           kill $(cat sumi.pid) 2>/dev/null || true
         fi
+        echo "=== Full sumi.log ==="
+        cat sumi.log || true
+
+    - name: Upload Artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: drop-artifacts
+        path: |
+          generated/*.webp
+          sumi.log
+        if-no-files-found: ignore
 
     - name: Commit and push image to repo
       uses: stefanzweifel/git-auto-commit-action@v5
       with:
         commit_message: "chore: test generated drop image"
         file_pattern: 'generated/*.webp'
+        commit_user_name: "github-actions[bot]"
+        commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
+        
