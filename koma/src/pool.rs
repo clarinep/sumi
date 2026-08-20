@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::sync::Arc;
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use crossbeam_queue::ArrayQueue;
 
 /// Capacity of the global lock-free pool.
@@ -62,8 +62,9 @@ where
 {
     LOCAL_SCRATCH.with(|cell| {
         let mut scratch = cell.borrow_mut();
-        if scratch.capacity() < min_size {
-            scratch.reserve(min_size - scratch.capacity());
+        let cap = scratch.capacity();
+        if cap < min_size {
+            scratch.reserve(min_size - cap);
         }
         scratch.clear();
         f(&mut scratch)
