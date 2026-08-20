@@ -1,6 +1,6 @@
 //! RIFF WebP container packaging for Simple and Extended WebP bitstreams.
 
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 
 /// Writes a 32-bit little-endian FourCC tag and chunk length.
 #[inline(always)]
