@@ -124,7 +124,7 @@ impl CardCache {
                 let current_kb = warmed_kb.load(Ordering::Relaxed);
                 if current_kb > ((MAX_CACHE_SIZE_KB as u64) * 9 / 10) {
                     tracing::info!("stopped baking (reached memory cap)");
-                    break;
+                    //
                 }
 
                 if join_set.len() >= concurrent_tasks {
@@ -154,17 +154,9 @@ impl CardCache {
                     let result = task::spawn_blocking(move || {
                         match webpx::decode_rgba(&file_bytes) {
                             Ok((mut pixels, width, height)) => {
-                                let mut all_zero = true;
+                                // Force opaque alpha (fix for transparent cards)
                                 for i in (3..pixels.len()).step_by(4) {
-                                    if pixels[i] != 0 {
-                                        all_zero = false;
-                                        break;
-                                    }
-                                }
-                                if all_zero {
-                                    for i in (3..pixels.len()).step_by(4) {
-                                        pixels[i] = 255;
-                                    }
+                                    pixels[i] = 255;
                                 }
 
                                 if width != 725 || height != 1040 {
@@ -251,17 +243,9 @@ impl CardCache {
                     ))
                 })?;
 
-            let mut all_zero = true;
+            // Force opaque alpha (fix for transparent cards)
             for i in (3..pixels.len()).step_by(4) {
-                if pixels[i] != 0 {
-                    all_zero = false;
-                    break;
-                }
-            }
-            if all_zero {
-                for i in (3..pixels.len()).step_by(4) {
-                    pixels[i] = 255;
-                }
+                pixels[i] = 255;
             }
             if width != 725 || height != 1040 {
                 tracing::warn!(
