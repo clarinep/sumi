@@ -11,8 +11,6 @@ pub struct EncoderConfig {
     pub quality: f32,
     /// Alpha transparency quality from `0` to `100`.
     pub alpha_quality: u8,
-    /// Enables performance optimizations for flat-color regions and borders.
-    pub fast_anime_shortcuts: bool,
 }
 
 impl EncoderConfig {
@@ -31,7 +29,10 @@ impl EncoderConfig {
     /// assert_eq!(config.quality, 90.0);
     /// ```
     pub const fn new(quality: f32) -> Self {
-        Self { quality, alpha_quality: 85, fast_anime_shortcuts: true }
+        Self {
+            quality,
+            alpha_quality: 85,
+        }
     }
 
     /// Returns a builder to configure encoding options step by step.
@@ -54,7 +55,10 @@ impl EncoderConfig {
 impl Default for EncoderConfig {
     /// Returns the default configuration with a quality factor of `85.0`.
     fn default() -> Self {
-        Self { quality: 85.0, alpha_quality: 85, fast_anime_shortcuts: true }
+        Self {
+            quality: 85.0,
+            alpha_quality: 85,
+        }
     }
 }
 
@@ -63,7 +67,6 @@ impl Default for EncoderConfig {
 pub struct EncoderConfigBuilder {
     quality: Option<f32>,
     alpha_quality: Option<u8>,
-    fast_anime_shortcuts: Option<bool>,
 }
 
 impl EncoderConfigBuilder {
@@ -92,22 +95,12 @@ impl EncoderConfigBuilder {
         self
     }
 
-    /// Toggles fast flat-field shortcuts for uniform graphics.
-    ///
-    /// # Arguments
-    ///
-    /// * `enabled` - `true` to enable optimizations, `false` to disable.
-    pub fn fast_anime_shortcuts(mut self, enabled: bool) -> Self {
-        self.fast_anime_shortcuts = Some(enabled);
-        self
-    }
-
     /// Builds and returns the final [`EncoderConfig`].
     pub fn build(self) -> EncoderConfig {
         EncoderConfig {
             quality: self.quality.unwrap_or(85.0),
             alpha_quality: self.alpha_quality.unwrap_or(85),
-            fast_anime_shortcuts: self.fast_anime_shortcuts.unwrap_or(true),
         }
     }
 }
+
