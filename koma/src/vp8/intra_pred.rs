@@ -1,506 +1,343 @@
-//! High-performance VP8 16x16 and 8x8 Intra Prediction Kernels.
+//! VP8 Intra-Prediction for 16x16 macroblocks, 4x4 subblocks (`B_PRED`), and 8x8 chroma blocks.
 //!
-//! Evaluates DC, Vertical (V_PRED), Horizontal (H_PRED), and TrueMotion (TM_PRED)
-//! modes for Luma (16x16) and Chroma (8x8) using hardware SIMD (AVX2 / SSE2 / NEON).
+//! Complies with RFC 6386 Section 12 for all directional modes.
 
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-
-#[cfg(target_arch = "aarch64")]
-use std::arch::aarch64::*;
-
-/// VP8 Intra 16x16 Luma Prediction Modes (RFC 6386 Section 11.1).
-#[repr(u8)]
+/// 16x16 Luma Intra-Prediction modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Intra16x16Mode {
-    /// Vertical prediction (replicate row above).
-    V = 0,
-    /// Horizontal prediction (replicate column to the left).
-    H = 1,
-    /// DC prediction (average of top row and left column).
-    DC = 2,
-    /// TrueMotion prediction (gradient: Top + Left - TopLeft).
-    TM = 3,
-}
-
-/// VP8 Intra 8x8 Chroma Prediction Modes (RFC 6386 Section 11.4).
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IntraUVMode {
-    /// DC prediction.
+pub enum Intra16Mode {
     DC = 0,
-    /// Vertical prediction.
     V = 1,
-    /// Horizontal prediction.
     H = 2,
-    /// TrueMotion prediction.
     TM = 3,
 }
 
-/// Computes the Sum of Absolute Differences (SAD) between 16x16 pixels and predictor using SIMD.
-#[inline(always)]
-pub fn sad_16x16(src: &[u8], src_stride: usize, pred: &[u8; 256]) -> u32 {
-    let mut total_sad = 0u32;
+/// 8x8 Chroma Intra-Prediction modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IntraChromaMode {
+    DC = 0,
+    V = 1,
+    H = 2,
+    TM = 3,
+}
 
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        for y in 0..16 {
-            let s_ptr = src.as_ptr().add(y * src_stride);
-            let p_ptr = pred.as_ptr().add(y * 16);
-            let s_vec = vld1q_u8(s_ptr);
-            let p_vec = vld1q_u8(p_ptr);
-            let diff = vabdq_u8(s_vec, p_vec);
-            total_sad += vaddlvq_u8(diff) as u32;
+/// 4x4 Subblock Directional Prediction modes (`B_PRED` - 10 modes).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BMode {
+    B_DC = 0,
+    B_TM = 1,
+    B_VE = 2,
+    B_HE = 3,
+    B_RD = 4,
+    B_VR = 5,
+    B_LD = 6,
+    B_VL = 7,
+    B_HD = 8,
+    B_HU = 9,
+}
+
+/// Computes 16x16 prediction block given top and left neighbor boundaries.
+pub fn predict_16x16(
+    mode: Intra16Mode,
+    top: Option<&[u8]>,
+    left: Option<&[u8]>,
+    top_left: Option<u8>,
+    dst: &mut [u8; 256],
+) {
+    match mode {
+        Intra16Mode::DC => {
+            let mut sum = 0u32;
+            let mut count = 0u32;
+            if let Some(t) = top {
+                for i in 0..16 {
+                    sum += t[i] as u32;
+                }
+                count += 16;
+            }
+            if let Some(l) = left {
+                for i in 0..16 {
+                    sum += l[i] as u32;
+                }
+                count += 16;
+            }
+            let dc = if count > 0 {
+                ((sum + (count >> 1)) / count) as u8
+            } else {
+                128
+            };
+            dst.fill(dc);
         }
-        return total_sad;
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        let mut acc = _mm_setzero_si128();
-        for y in 0..16 {
-            let s_ptr = src.as_ptr().add(y * src_stride);
-            let p_ptr = pred.as_ptr().add(y * 16);
-            let s_vec = _mm_loadu_si128(s_ptr as *const __m128i);
-            let p_vec = _mm_loadu_si128(p_ptr as *const __m128i);
-            let sad = _mm_sad_epu8(s_vec, p_vec);
-            acc = _mm_add_epi64(acc, sad);
-        }
-        let lo = _mm_cvtsi128_si32(acc) as u32;
-        let hi = _mm_extract_epi16::<4>(acc) as u32;
-        return lo + hi;
-    }
-
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    {
-        for y in 0..16 {
-            let s_row = y * src_stride;
-            let p_row = y * 16;
-            for x in 0..16 {
-                let diff = (src[s_row + x] as i32 - pred[p_row + x] as i32).abs() as u32;
-                total_sad += diff;
+        Intra16Mode::V => {
+            if let Some(t) = top {
+                for y in 0..16 {
+                    for x in 0..16 {
+                        dst[y * 16 + x] = t[x];
+                    }
+                }
+            } else {
+                dst.fill(128);
             }
         }
-        total_sad
-    }
-}
-
-/// Computes the SAD between 8x8 pixels and predictor using SIMD.
-#[inline(always)]
-pub fn sad_8x8(src: &[u8], src_stride: usize, pred: &[u8; 64]) -> u32 {
-    let mut total_sad = 0u32;
-
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        for y in 0..8 {
-            let s_ptr = src.as_ptr().add(y * src_stride);
-            let p_ptr = pred.as_ptr().add(y * 8);
-            let s_vec = vld1_u8(s_ptr);
-            let p_vec = vld1_u8(p_ptr);
-            let diff = vabd_u8(s_vec, p_vec);
-            total_sad += vaddlv_u8(diff) as u32;
-        }
-        return total_sad;
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        let mut acc = _mm_setzero_si128();
-        for y in (0..8).step_by(2) {
-            let s_ptr0 = src.as_ptr().add(y * src_stride) as *const u64;
-            let s_ptr1 = src.as_ptr().add((y + 1) * src_stride) as *const u64;
-            let p_ptr0 = pred.as_ptr().add(y * 8) as *const u64;
-            let p_ptr1 = pred.as_ptr().add((y + 1) * 8) as *const u64;
-
-            let s0 = std::ptr::read_unaligned(s_ptr0);
-            let s1 = std::ptr::read_unaligned(s_ptr1);
-            let p0 = std::ptr::read_unaligned(p_ptr0);
-            let p1 = std::ptr::read_unaligned(p_ptr1);
-
-            let s_vec = _mm_set_epi64x(s1 as i64, s0 as i64);
-            let p_vec = _mm_set_epi64x(p1 as i64, p0 as i64);
-
-            let sad = _mm_sad_epu8(s_vec, p_vec);
-            acc = _mm_add_epi64(acc, sad);
-        }
-        let lo = _mm_cvtsi128_si32(acc) as u32;
-        let hi = _mm_extract_epi16::<4>(acc) as u32;
-        return lo + hi;
-    }
-
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    {
-        for y in 0..8 {
-            let s_row = y * src_stride;
-            let p_row = y * 8;
-            for x in 0..8 {
-                let diff = (src[s_row + x] as i32 - pred[p_row + x] as i32).abs() as u32;
-                total_sad += diff;
+        Intra16Mode::H => {
+            if let Some(l) = left {
+                for y in 0..16 {
+                    for x in 0..16 {
+                        dst[y * 16 + x] = l[y];
+                    }
+                }
+            } else {
+                dst.fill(128);
             }
         }
-        total_sad
+        Intra16Mode::TM => {
+            let tl = top_left.unwrap_or(128) as i32;
+            for y in 0..16 {
+                let l_val = left.map_or(128, |l| l[y]) as i32;
+                for x in 0..16 {
+                    let t_val = top.map_or(128, |t| t[x]) as i32;
+                    let pred = (l_val + t_val - tl).clamp(0, 255) as u8;
+                    dst[y * 16 + x] = pred;
+                }
+            }
+        }
     }
 }
 
-/// Fills 16x16 DC prediction buffer.
-#[inline(always)]
-pub fn predict_16x16_dc(
-    recon: &[u8],
-    stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    out: &mut [u8; 256],
-) -> u8 {
-    let mb_x_px = mb_x * 16;
-    let mb_y_px = mb_y * 16;
-
-    let mut sum = 0u32;
-    let mut count = 0u32;
-
-    if mb_y > 0 {
-        let top_off = (mb_y_px - 1) * stride + mb_x_px;
-        for x in 0..16 {
-            sum += recon[top_off + x] as u32;
-        }
-        count += 16;
-    }
-
-    if mb_x > 0 {
-        for y in 0..16 {
-            let left_val = recon[(mb_y_px + y) * stride + (mb_x_px - 1)];
-            sum += left_val as u32;
-        }
-        count += 16;
-    }
-
-    let dc = match count {
-        32 => ((sum + 16) >> 5) as u8,
-        16 => ((sum + 8) >> 4) as u8,
-        _ => 128,
-    };
-
-    out.fill(dc);
-    dc
-}
-
-/// Fills 16x16 Vertical prediction buffer.
-#[inline(always)]
-pub fn predict_16x16_v(
-    recon: &[u8],
-    stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    out: &mut [u8; 256],
+/// Computes 8x8 Chroma prediction block given top and left neighbor boundaries.
+pub fn predict_8x8(
+    mode: IntraChromaMode,
+    top: Option<&[u8]>,
+    left: Option<&[u8]>,
+    top_left: Option<u8>,
+    dst: &mut [u8; 64],
 ) {
-    if mb_y == 0 {
-        out.fill(128);
-        return;
-    }
-    let top_off = (mb_y * 16 - 1) * stride + (mb_x * 16);
-    let top_row = &recon[top_off..top_off + 16];
-    for y in 0..16 {
-        out[y * 16..(y + 1) * 16].copy_from_slice(top_row);
+    match mode {
+        IntraChromaMode::DC => {
+            let mut sum = 0u32;
+            let mut count = 0u32;
+            if let Some(t) = top {
+                for i in 0..8 {
+                    sum += t[i] as u32;
+                }
+                count += 8;
+            }
+            if let Some(l) = left {
+                for i in 0..8 {
+                    sum += l[i] as u32;
+                }
+                count += 8;
+            }
+            let dc = if count > 0 {
+                ((sum + (count >> 1)) / count) as u8
+            } else {
+                128
+            };
+            dst.fill(dc);
+        }
+        IntraChromaMode::V => {
+            if let Some(t) = top {
+                for y in 0..8 {
+                    for x in 0..8 {
+                        dst[y * 8 + x] = t[x];
+                    }
+                }
+            } else {
+                dst.fill(128);
+            }
+        }
+        IntraChromaMode::H => {
+            if let Some(l) = left {
+                for y in 0..8 {
+                    for x in 0..8 {
+                        dst[y * 8 + x] = l[y];
+                    }
+                }
+            } else {
+                dst.fill(128);
+            }
+        }
+        IntraChromaMode::TM => {
+            let tl = top_left.unwrap_or(128) as i32;
+            for y in 0..8 {
+                let l_val = left.map_or(128, |l| l[y]) as i32;
+                for x in 0..8 {
+                    let t_val = top.map_or(128, |t| t[x]) as i32;
+                    let pred = (l_val + t_val - tl).clamp(0, 255) as u8;
+                    dst[y * 8 + x] = pred;
+                }
+            }
+        }
     }
 }
 
-/// Fills 16x16 Horizontal prediction buffer.
-#[inline(always)]
-pub fn predict_16x16_h(
-    recon: &[u8],
-    stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    out: &mut [u8; 256],
+/// Computes 4x4 Subblock Prediction for directional mode (`B_PRED`).
+pub fn predict_4x4(
+    mode: BMode,
+    above: &[u8; 8],     // [top0, top1, top2, top3, top4, top5, top6, top7]
+    left: &[u8; 4],      // [left0, left1, left2, left3]
+    top_left: u8,        // top-left sample
+    dst: &mut [u8; 16],  // 4x4 output
 ) {
-    if mb_x == 0 {
-        out.fill(128);
-        return;
-    }
-    let mb_x_px = mb_x * 16;
-    let mb_y_px = mb_y * 16;
-    for y in 0..16 {
-        let left_val = recon[(mb_y_px + y) * stride + (mb_x_px - 1)];
-        out[y * 16..(y + 1) * 16].fill(left_val);
-    }
-}
+    let a0 = above[0] as i32;
+    let a1 = above[1] as i32;
+    let a2 = above[2] as i32;
+    let a3 = above[3] as i32;
+    let a4 = above[4] as i32;
+    let a5 = above[5] as i32;
+    let a6 = above[6] as i32;
 
-/// Fills 16x16 TrueMotion (TM_PRED) buffer: `clip(Left[y] + Top[x] - TopLeft)`.
-#[inline(always)]
-pub fn predict_16x16_tm(
-    recon: &[u8],
-    stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    out: &mut [u8; 256],
-) {
-    if mb_x == 0 && mb_y == 0 {
-        out.fill(128);
-        return;
-    }
-    if mb_y == 0 {
-        predict_16x16_h(recon, stride, mb_x, mb_y, out);
-        return;
-    }
-    if mb_x == 0 {
-        predict_16x16_v(recon, stride, mb_x, mb_y, out);
-        return;
-    }
+    let l0 = left[0] as i32;
+    let l1 = left[1] as i32;
+    let l2 = left[2] as i32;
+    let l3 = left[3] as i32;
 
-    let mb_x_px = mb_x * 16;
-    let mb_y_px = mb_y * 16;
+    let tl = top_left as i32;
 
-    let top_left = recon[(mb_y_px - 1) * stride + (mb_x_px - 1)] as i32;
-    let top_off = (mb_y_px - 1) * stride + mb_x_px;
-    let top_row = &recon[top_off..top_off + 16];
+    match mode {
+        BMode::B_DC => {
+            let dc = ((a0 + a1 + a2 + a3 + l0 + l1 + l2 + l3 + 4) >> 3) as u8;
+            dst.fill(dc);
+        }
+        BMode::B_TM => {
+            for y in 0..4 {
+                let l = left[y] as i32;
+                for x in 0..4 {
+                    let a = above[x] as i32;
+                    dst[y * 4 + x] = (l + a - tl).clamp(0, 255) as u8;
+                }
+            }
+        }
+        BMode::B_VE => {
+            let v0 = (tl + 2 * a0 + a1 + 2) >> 2;
+            let v1 = (a0 + 2 * a1 + a2 + 2) >> 2;
+            let v2 = (a1 + 2 * a2 + a3 + 2) >> 2;
+            let v3 = (a2 + 2 * a3 + a4 + 2) >> 2;
+            for y in 0..4 {
+                dst[y * 4 + 0] = v0 as u8;
+                dst[y * 4 + 1] = v1 as u8;
+                dst[y * 4 + 2] = v2 as u8;
+                dst[y * 4 + 3] = v3 as u8;
+            }
+        }
+        BMode::B_HE => {
+            let h0 = (tl + 2 * l0 + l1 + 2) >> 2;
+            let h1 = (l0 + 2 * l1 + l2 + 2) >> 2;
+            let h2 = (l1 + 2 * l2 + l3 + 2) >> 2;
+            let h3 = (l2 + 2 * l3 + l3 + 2) >> 2;
+            for x in 0..4 {
+                dst[0 * 4 + x] = h0 as u8;
+                dst[1 * 4 + x] = h1 as u8;
+                dst[2 * 4 + x] = h2 as u8;
+                dst[3 * 4 + x] = h3 as u8;
+            }
+        }
+        BMode::B_RD => {
+            let d3 = (l3 + 2 * l2 + l1 + 2) >> 2;
+            let d2 = (l2 + 2 * l1 + l0 + 2) >> 2;
+            let d1 = (l1 + 2 * l0 + tl + 2) >> 2;
+            let d0 = (l0 + 2 * tl + a0 + 2) >> 2;
+            let d_1 = (tl + 2 * a0 + a1 + 2) >> 2;
+            let d_2 = (a0 + 2 * a1 + a2 + 2) >> 2;
+            let d_3 = (a1 + 2 * a2 + a3 + 2) >> 2;
 
-    for y in 0..16 {
-        let left_val = recon[(mb_y_px + y) * stride + (mb_x_px - 1)] as i32;
-        let base = left_val - top_left;
-        let out_row = y * 16;
-        for x in 0..16 {
-            let pred = base + (top_row[x] as i32);
-            out[out_row + x] = pred.clamp(0, 255) as u8;
+            dst[3 * 4 + 0] = d3 as u8;
+            dst[2 * 4 + 0] = d2 as u8; dst[3 * 4 + 1] = d2 as u8;
+            dst[1 * 4 + 0] = d1 as u8; dst[2 * 4 + 1] = d1 as u8; dst[3 * 4 + 2] = d1 as u8;
+            dst[0 * 4 + 0] = d0 as u8; dst[1 * 4 + 1] = d0 as u8; dst[2 * 4 + 2] = d0 as u8; dst[3 * 4 + 3] = d0 as u8;
+            dst[0 * 4 + 1] = d_1 as u8; dst[1 * 4 + 2] = d_1 as u8; dst[2 * 4 + 3] = d_1 as u8;
+            dst[0 * 4 + 2] = d_2 as u8; dst[1 * 4 + 3] = d_2 as u8;
+            dst[0 * 4 + 3] = d_3 as u8;
+        }
+        BMode::B_VR => {
+            let v_1 = (tl + a0 + 1) >> 1;
+            let v_2 = (a0 + a1 + 1) >> 1;
+            let v_3 = (a1 + a2 + 1) >> 1;
+            let v_4 = (a2 + a3 + 1) >> 1;
+            let d0 = (l0 + 2 * tl + a0 + 2) >> 2;
+            let d1 = (l1 + 2 * l0 + tl + 2) >> 2;
+            let d2 = (l2 + 2 * l1 + l0 + 2) >> 2;
+
+            dst[0 * 4 + 0] = v_1 as u8; dst[2 * 4 + 1] = v_1 as u8;
+            dst[0 * 4 + 1] = v_2 as u8; dst[2 * 4 + 2] = v_2 as u8;
+            dst[0 * 4 + 2] = v_3 as u8; dst[2 * 4 + 3] = v_3 as u8;
+            dst[0 * 4 + 3] = v_4 as u8;
+
+            dst[1 * 4 + 0] = d0 as u8; dst[3 * 4 + 1] = d0 as u8;
+            dst[1 * 4 + 1] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8; dst[3 * 4 + 2] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8;
+            dst[1 * 4 + 2] = ((a0 + 2 * a1 + a2 + 2) >> 2) as u8; dst[3 * 4 + 3] = ((a0 + 2 * a1 + a2 + 2) >> 2) as u8;
+            dst[1 * 4 + 3] = ((a1 + 2 * a2 + a3 + 2) >> 2) as u8;
+
+            dst[2 * 4 + 0] = d1 as u8;
+            dst[3 * 4 + 0] = d2 as u8;
+        }
+        BMode::B_LD => {
+            let ld0 = (a0 + 2 * a1 + a2 + 2) >> 2;
+            let ld1 = (a1 + 2 * a2 + a3 + 2) >> 2;
+            let ld2 = (a2 + 2 * a3 + a4 + 2) >> 2;
+            let ld3 = (a3 + 2 * a4 + a5 + 2) >> 2;
+            let ld4 = (a4 + 2 * a5 + a6 + 2) >> 2;
+            let ld5 = (a5 + 2 * a6 + a6 + 2) >> 2;
+
+            dst[0 * 4 + 0] = ld0 as u8;
+            dst[0 * 4 + 1] = ld1 as u8; dst[1 * 4 + 0] = ld1 as u8;
+            dst[0 * 4 + 2] = ld2 as u8; dst[1 * 4 + 1] = ld2 as u8; dst[2 * 4 + 0] = ld2 as u8;
+            dst[0 * 4 + 3] = ld3 as u8; dst[1 * 4 + 2] = ld3 as u8; dst[2 * 4 + 1] = ld3 as u8; dst[3 * 4 + 0] = ld3 as u8;
+            dst[1 * 4 + 3] = ld4 as u8; dst[2 * 4 + 2] = ld4 as u8; dst[3 * 4 + 1] = ld4 as u8;
+            dst[2 * 4 + 3] = ld5 as u8; dst[3 * 4 + 2] = ld5 as u8;
+            dst[3 * 4 + 3] = ld5 as u8;
+        }
+        BMode::B_VL => {
+            let vl0 = (a0 + a1 + 1) >> 1;
+            let vl1 = (a1 + a2 + 1) >> 1;
+            let vl2 = (a2 + a3 + 1) >> 1;
+            let vl3 = (a3 + a4 + 1) >> 1;
+            let d0 = (a0 + 2 * a1 + a2 + 2) >> 2;
+            let d1 = (a1 + 2 * a2 + a3 + 2) >> 2;
+            let d2 = (a2 + 2 * a3 + a4 + 2) >> 2;
+            let d3 = (a3 + 2 * a4 + a5 + 2) >> 2;
+
+            dst[0 * 4 + 0] = vl0 as u8; dst[2 * 4 + 0] = d0 as u8;
+            dst[0 * 4 + 1] = vl1 as u8; dst[2 * 4 + 1] = d1 as u8;
+            dst[0 * 4 + 2] = vl2 as u8; dst[2 * 4 + 2] = d2 as u8;
+            dst[0 * 4 + 3] = vl3 as u8; dst[2 * 4 + 3] = d3 as u8;
+
+            dst[1 * 4 + 0] = d0 as u8; dst[3 * 4 + 0] = vl1 as u8;
+            dst[1 * 4 + 1] = d1 as u8; dst[3 * 4 + 1] = vl2 as u8;
+            dst[1 * 4 + 2] = d2 as u8; dst[3 * 4 + 2] = vl3 as u8;
+            dst[1 * 4 + 3] = d3 as u8; dst[3 * 4 + 3] = ((a4 + a5 + 1) >> 1) as u8;
+        }
+        BMode::B_HD => {
+            let h_1 = (l0 + tl + 1) >> 1;
+            let d0 = (l1 + 2 * l0 + tl + 2) >> 2;
+            let h_2 = (l1 + l0 + 1) >> 1;
+            let d1 = (l2 + 2 * l1 + l0 + 2) >> 2;
+            let h_3 = (l2 + l1 + 1) >> 1;
+            let d2 = (l3 + 2 * l2 + l1 + 2) >> 2;
+
+            dst[0 * 4 + 0] = h_1 as u8; dst[0 * 4 + 2] = d0 as u8;
+            dst[1 * 4 + 0] = h_2 as u8; dst[1 * 4 + 2] = d1 as u8;
+            dst[2 * 4 + 0] = h_3 as u8; dst[2 * 4 + 2] = d2 as u8;
+            dst[3 * 4 + 0] = ((l3 + l2 + 1) >> 1) as u8; dst[3 * 4 + 2] = ((l3 + 2 * l3 + l2 + 2) >> 2) as u8;
+
+            dst[0 * 4 + 1] = ((l0 + 2 * tl + a0 + 2) >> 2) as u8; dst[0 * 4 + 3] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8;
+            dst[1 * 4 + 1] = d0 as u8; dst[1 * 4 + 3] = ((l0 + 2 * tl + a0 + 2) >> 2) as u8;
+            dst[2 * 4 + 1] = d1 as u8; dst[2 * 4 + 3] = d0 as u8;
+            dst[3 * 4 + 1] = d2 as u8; dst[3 * 4 + 3] = d1 as u8;
+        }
+        BMode::B_HU => {
+            let hu0 = (l0 + l1 + 1) >> 1;
+            let hu1 = (l1 + l2 + 1) >> 1;
+            let hu2 = (l2 + l3 + 1) >> 1;
+            let d0 = (l0 + 2 * l1 + l2 + 2) >> 2;
+            let d1 = (l1 + 2 * l2 + l3 + 2) >> 2;
+            let d2 = (l2 + 2 * l3 + l3 + 2) >> 2;
+
+            dst[0 * 4 + 0] = hu0 as u8; dst[0 * 4 + 1] = d0 as u8; dst[0 * 4 + 2] = hu1 as u8; dst[0 * 4 + 3] = d1 as u8;
+            dst[1 * 4 + 0] = hu1 as u8; dst[1 * 4 + 1] = d1 as u8; dst[1 * 4 + 2] = hu2 as u8; dst[1 * 4 + 3] = d2 as u8;
+            dst[2 * 4 + 0] = hu2 as u8; dst[2 * 4 + 1] = d2 as u8; dst[2 * 4 + 2] = l3 as u8; dst[2 * 4 + 3] = l3 as u8;
+            dst[3 * 4 + 0] = l3 as u8;  dst[3 * 4 + 1] = l3 as u8; dst[3 * 4 + 2] = l3 as u8; dst[3 * 4 + 3] = l3 as u8;
         }
     }
-}
-
-/// Fills 8x8 DC prediction buffer for Chroma.
-#[inline(always)]
-pub fn predict_8x8_dc(
-    recon: &[u8],
-    stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    out: &mut [u8; 64],
-) -> u8 {
-    let uv_x_px = mb_x * 8;
-    let uv_y_px = mb_y * 8;
-
-    let mut sum = 0u32;
-    let mut count = 0u32;
-
-    if mb_y > 0 {
-        let top_off = (uv_y_px - 1) * stride + uv_x_px;
-        for x in 0..8 {
-            sum += recon[top_off + x] as u32;
-        }
-        count += 8;
-    }
-
-    if mb_x > 0 {
-        for y in 0..8 {
-            let left_val = recon[(uv_y_px + y) * stride + (uv_x_px - 1)];
-            sum += left_val as u32;
-        }
-        count += 8;
-    }
-
-    let dc = match count {
-        16 => ((sum + 8) >> 4) as u8,
-        8 => ((sum + 4) >> 3) as u8,
-        _ => 128,
-    };
-
-    out.fill(dc);
-    dc
-}
-
-/// Fills 8x8 Vertical prediction buffer for Chroma.
-#[inline(always)]
-pub fn predict_8x8_v(
-    recon: &[u8],
-    stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    out: &mut [u8; 64],
-) {
-    if mb_y == 0 {
-        out.fill(128);
-        return;
-    }
-    let top_off = (mb_y * 8 - 1) * stride + (mb_x * 8);
-    let top_row = &recon[top_off..top_off + 8];
-    for y in 0..8 {
-        out[y * 8..(y + 1) * 8].copy_from_slice(top_row);
-    }
-}
-
-/// Fills 8x8 Horizontal prediction buffer for Chroma.
-#[inline(always)]
-pub fn predict_8x8_h(
-    recon: &[u8],
-    stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    out: &mut [u8; 64],
-) {
-    if mb_x == 0 {
-        out.fill(128);
-        return;
-    }
-    let uv_x_px = mb_x * 8;
-    let uv_y_px = mb_y * 8;
-    for y in 0..8 {
-        let left_val = recon[(uv_y_px + y) * stride + (uv_x_px - 1)];
-        out[y * 8..(y + 1) * 8].fill(left_val);
-    }
-}
-
-/// Fills 8x8 TrueMotion prediction buffer for Chroma.
-#[inline(always)]
-pub fn predict_8x8_tm(
-    recon: &[u8],
-    stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    out: &mut [u8; 64],
-) {
-    if mb_x == 0 && mb_y == 0 {
-        out.fill(128);
-        return;
-    }
-    if mb_y == 0 {
-        predict_8x8_h(recon, stride, mb_x, mb_y, out);
-        return;
-    }
-    if mb_x == 0 {
-        predict_8x8_v(recon, stride, mb_x, mb_y, out);
-        return;
-    }
-
-    let uv_x_px = mb_x * 8;
-    let uv_y_px = mb_y * 8;
-
-    let top_left = recon[(uv_y_px - 1) * stride + (uv_x_px - 1)] as i32;
-    let top_off = (uv_y_px - 1) * stride + uv_x_px;
-    let top_row = &recon[top_off..top_off + 8];
-
-    for y in 0..8 {
-        let left_val = recon[(uv_y_px + y) * stride + (uv_x_px - 1)] as i32;
-        let base = left_val - top_left;
-        let out_row = y * 8;
-        for x in 0..8 {
-            let pred = base + (top_row[x] as i32);
-            out[out_row + x] = pred.clamp(0, 255) as u8;
-        }
-    }
-}
-
-/// Evaluates all available 16x16 Luma prediction modes and returns the one with lowest SAD.
-#[inline(always)]
-pub fn select_best_16x16_luma_mode(
-    src: &[u8],
-    src_stride: usize,
-    recon: &[u8],
-    recon_stride: usize,
-    mb_x: usize,
-    mb_y: usize,
-    best_pred_buf: &mut [u8; 256],
-) -> Intra16x16Mode {
-    let mut cand_buf = [0u8; 256];
-
-    // 1. DC Mode (Baseline)
-    predict_16x16_dc(recon, recon_stride, mb_x, mb_y, &mut cand_buf);
-    let mut min_sad = sad_16x16(src, src_stride, &cand_buf);
-    let mut best_mode = Intra16x16Mode::DC;
-    best_pred_buf.copy_from_slice(&cand_buf);
-
-    // 2. TrueMotion Mode (Super effective for anime art, gradients, hair and lighting)
-    if mb_x > 0 || mb_y > 0 {
-        predict_16x16_tm(recon, recon_stride, mb_x, mb_y, &mut cand_buf);
-        let tm_sad = sad_16x16(src, src_stride, &cand_buf);
-        if tm_sad < min_sad {
-            min_sad = tm_sad;
-            best_mode = Intra16x16Mode::TM;
-            best_pred_buf.copy_from_slice(&cand_buf);
-        }
-    }
-
-    // 3. Vertical Mode
-    if mb_y > 0 {
-        predict_16x16_v(recon, recon_stride, mb_x, mb_y, &mut cand_buf);
-        let v_sad = sad_16x16(src, src_stride, &cand_buf);
-        if v_sad < min_sad {
-            min_sad = v_sad;
-            best_mode = Intra16x16Mode::V;
-            best_pred_buf.copy_from_slice(&cand_buf);
-        }
-    }
-
-    // 4. Horizontal Mode
-    if mb_x > 0 {
-        predict_16x16_h(recon, recon_stride, mb_x, mb_y, &mut cand_buf);
-        let h_sad = sad_16x16(src, src_stride, &cand_buf);
-        if h_sad < min_sad {
-            best_mode = Intra16x16Mode::H;
-            best_pred_buf.copy_from_slice(&cand_buf);
-        }
-    }
-
-    best_mode
-}
-
-/// Evaluates all 8x8 Chroma prediction modes across both U and V planes and returns the joint best mode.
-#[inline(always)]
-pub fn select_best_chroma_mode(
-    u_src: &[u8],
-    v_src: &[u8],
-    uv_stride: usize,
-    recon_u: &[u8],
-    recon_v: &[u8],
-    mb_x: usize,
-    mb_y: usize,
-    best_u_pred: &mut [u8; 64],
-    best_v_pred: &mut [u8; 64],
-) -> IntraUVMode {
-    let mut u_cand = [0u8; 64];
-    let mut v_cand = [0u8; 64];
-
-    // 1. DC Mode
-    predict_8x8_dc(recon_u, uv_stride, mb_x, mb_y, &mut u_cand);
-    predict_8x8_dc(recon_v, uv_stride, mb_x, mb_y, &mut v_cand);
-    let mut min_sad = sad_8x8(u_src, uv_stride, &u_cand) + sad_8x8(v_src, uv_stride, &v_cand);
-    let mut best_mode = IntraUVMode::DC;
-    best_u_pred.copy_from_slice(&u_cand);
-    best_v_pred.copy_from_slice(&v_cand);
-
-    // 2. TrueMotion Mode
-    if mb_x > 0 || mb_y > 0 {
-        predict_8x8_tm(recon_u, uv_stride, mb_x, mb_y, &mut u_cand);
-        predict_8x8_tm(recon_v, uv_stride, mb_x, mb_y, &mut v_cand);
-        let tm_sad = sad_8x8(u_src, uv_stride, &u_cand) + sad_8x8(v_src, uv_stride, &v_cand);
-        if tm_sad < min_sad {
-            min_sad = tm_sad;
-            best_mode = IntraUVMode::TM;
-            best_u_pred.copy_from_slice(&u_cand);
-            best_v_pred.copy_from_slice(&v_cand);
-        }
-    }
-
-    // 3. Vertical Mode
-    if mb_y > 0 {
-        predict_8x8_v(recon_u, uv_stride, mb_x, mb_y, &mut u_cand);
-        predict_8x8_v(recon_v, uv_stride, mb_x, mb_y, &mut v_cand);
-        let v_sad = sad_8x8(u_src, uv_stride, &u_cand) + sad_8x8(v_src, uv_stride, &v_cand);
-        if v_sad < min_sad {
-            min_sad = v_sad;
-            best_mode = IntraUVMode::V;
-            best_u_pred.copy_from_slice(&u_cand);
-            best_v_pred.copy_from_slice(&v_cand);
-        }
-    }
-
-    // 4. Horizontal Mode
-    if mb_x > 0 {
-        predict_8x8_h(recon_u, uv_stride, mb_x, mb_y, &mut u_cand);
-        predict_8x8_h(recon_v, uv_stride, mb_x, mb_y, &mut v_cand);
-        let h_sad = sad_8x8(u_src, uv_stride, &u_cand) + sad_8x8(v_src, uv_stride, &v_cand);
-        if h_sad < min_sad {
-            best_mode = IntraUVMode::H;
-            best_u_pred.copy_from_slice(&u_cand);
-            best_v_pred.copy_from_slice(&v_cand);
-        }
-    }
-
-    best_mode
 }
