@@ -9,8 +9,8 @@ use std::{
     num::NonZero,
     path::Path,
     sync::{
-        Arc,
         atomic::{AtomicU64, AtomicUsize, Ordering},
+        Arc,
     },
     thread,
 };
@@ -86,9 +86,9 @@ impl CardCache {
                         let name_str = key_path.to_string_lossy().replace('\\', "/");
                         index.insert(name_str.into(), path.into());
                     }
-                } else if ext.eq_ignore_ascii_case("png")
-                    || ext.eq_ignore_ascii_case("jpg")
-                    || ext.eq_ignore_ascii_case("jpeg")
+                } else if ext.eq_ignore_ascii_case("png") 
+                    || ext.eq_ignore_ascii_case("jpg") 
+                    || ext.eq_ignore_ascii_case("jpeg") 
                 {
                     tracing::warn!("ignored '{}' (only webp supported)", path.display());
                 }
@@ -151,9 +151,22 @@ impl CardCache {
 
                     let file_len = file_bytes.len() as u64;
 
-                    let result =
-                        task::spawn_blocking(move || match webpx::decode_rgba(&file_bytes) {
-                            Ok((pixels, width, height)) => {
+                    let result = task::spawn_blocking(move || {
+                        match webpx::decode_rgba(&file_bytes) {
+                            Ok((mut pixels, width, height)) => {
+                                let mut all_zero = true;
+                                for i in (3..pixels.len()).step_by(4) {
+                                    if pixels[i] != 0 {
+                                        all_zero = false;
+                                        break;
+                                    }
+                                }
+                                if all_zero {
+                                    for i in (3..pixels.len()).step_by(4) {
+                                        pixels[i] = 255;
+                                    }
+                                }
+
                                 if width != 725 || height != 1040 {
                                     tracing::warn!(
                                         "card '{}' dimension is {}x{} (expected 725x1040)",
@@ -175,9 +188,10 @@ impl CardCache {
                                 );
                                 None
                             }
-                        })
-                        .await
-                        .unwrap_or(None);
+                        }
+                    })
+                    .await
+                    .unwrap_or(None);
 
                     if let Some(arc_img) = result {
                         let size_kb = arc_img.pixels.len() / 1024;
@@ -229,13 +243,26 @@ impl CardCache {
         }
 
         let arc_img = task::spawn_blocking(move || {
-            let (pixels, width, height) = webpx::decode_rgba(&file_bytes).map_err(|e| {
-                RenderError::Internal(format!(
-                    "failed to decode webp for '{}': {e:?}",
-                    path.display()
-                ))
-            })?;
+            let (mut pixels, width, height) = webpx::decode_rgba(&file_bytes)
+                .map_err(|e| {
+                    RenderError::Internal(format!(
+                        "failed to decode webp for '{}': {e:?}",
+                        path.display()
+                    ))
+                })?;
 
+            let mut all_zero = true;
+            for i in (3..pixels.len()).step_by(4) {
+                if pixels[i] != 0 {
+                    all_zero = false;
+                    break;
+                }
+            }
+            if all_zero {
+                for i in (3..pixels.len()).step_by(4) {
+                    pixels[i] = 255;
+                }
+            }
             if width != 725 || height != 1040 {
                 tracing::warn!(
                     "card '{}' dimension is {}x{} (expected 725x1040)",
