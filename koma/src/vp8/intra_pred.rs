@@ -23,6 +23,7 @@ pub enum IntraChromaMode {
 }
 
 /// 4x4 Subblock Directional Prediction modes (`B_PRED` - 10 modes).
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum BMode {
