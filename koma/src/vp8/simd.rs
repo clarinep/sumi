@@ -13,7 +13,7 @@ pub fn sad_16x16(src: &[u8], src_stride: usize, ref_block: &[u8], ref_stride: us
     for y in 0..16 {
         let s_row = &src[y * src_stride..y * src_stride + 16];
         let r_row = &ref_block[y * ref_stride..y * ref_stride + 16];
-        
+
         // Unroll 16 elements
         let mut row_sum: u32 = 0;
         for x in 0..16 {
@@ -31,7 +31,7 @@ pub fn sad_8x8(src: &[u8], src_stride: usize, ref_block: &[u8], ref_stride: usiz
     for y in 0..8 {
         let s_row = &src[y * src_stride..y * src_stride + 8];
         let r_row = &ref_block[y * ref_stride..y * ref_stride + 8];
-        
+
         let mut row_sum: u32 = 0;
         for x in 0..8 {
             row_sum += (s_row[x] as i32 - r_row[x] as i32).unsigned_abs();

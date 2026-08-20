@@ -2,14 +2,7 @@
 
 /// Applies standard in-loop normal filter to a macroblock boundary.
 #[inline(always)]
-fn filter_edge(
-    p1: u8,
-    p0: u8,
-    q0: u8,
-    q1: u8,
-    limit: i32,
-    thresh: i32,
-) -> (u8, u8) {
+fn filter_edge(p1: u8, p0: u8, q0: u8, q1: u8, limit: i32, thresh: i32) -> (u8, u8) {
     let diff = (q0 as i32) - (p0 as i32);
     if diff.abs() >= limit {
         return (p0, q0);
@@ -29,7 +22,14 @@ fn filter_edge(
 }
 
 /// In-loop vertical edge filter for 16x16 luma boundary.
-pub fn filter_vertical_edge_16(plane: &mut [u8], stride: usize, x: usize, y: usize, limit: i32, thresh: i32) {
+pub fn filter_vertical_edge_16(
+    plane: &mut [u8],
+    stride: usize,
+    x: usize,
+    y: usize,
+    limit: i32,
+    thresh: i32,
+) {
     for row in 0..16 {
         let idx = (y + row) * stride + x;
         let p1 = plane[idx - 2];
@@ -44,7 +44,14 @@ pub fn filter_vertical_edge_16(plane: &mut [u8], stride: usize, x: usize, y: usi
 }
 
 /// In-loop horizontal edge filter for 16x16 luma boundary.
-pub fn filter_horizontal_edge_16(plane: &mut [u8], stride: usize, x: usize, y: usize, limit: i32, thresh: i32) {
+pub fn filter_horizontal_edge_16(
+    plane: &mut [u8],
+    stride: usize,
+    x: usize,
+    y: usize,
+    limit: i32,
+    thresh: i32,
+) {
     for col in 0..16 {
         let idx = y * stride + (x + col);
         let p1 = plane[idx - 2 * stride];

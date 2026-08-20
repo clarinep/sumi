@@ -1,7 +1,9 @@
 //! VP8 Quantization, Reciprocal Division & Dequantization matrices.
 
-use super::tables::{AC_LOOKUP, DC_LOOKUP};
-use super::trellis::trellis_quantize_4x4;
+use super::{
+    tables::{AC_LOOKUP, DC_LOOKUP},
+    trellis::trellis_quantize_4x4,
+};
 
 /// Quantizer setup and scale factors for a macroblock.
 #[derive(Debug, Clone, Copy)]

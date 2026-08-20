@@ -1,7 +1,7 @@
 //! RFC 6386 Arithmetic Boolean Range Coder.
 //!
 //! Implements the binary arithmetic entropy encoder specified in RFC 6386 Section 7.
-//! VP8's boolean coder uses an 8-bit range `[128, 255]`, 32-bit low value, and a 
+//! VP8's boolean coder uses an 8-bit range `[128, 255]`, 32-bit low value, and a
 //! carry bit mechanism with standard bit-level renormalizations.
 
 /// Standard RFC 6386 Boolean Range Encoder.
@@ -31,12 +31,7 @@ impl BoolEncoder {
 
     /// Creates a new boolean coder with pre-allocated buffer capacity.
     pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            low: 0,
-            range: 255,
-            count: -24,
-            buffer: Vec::with_capacity(capacity),
-        }
+        Self { low: 0, range: 255, count: -24, buffer: Vec::with_capacity(capacity) }
     }
 
     /// Encodes a single boolean value with a given probability (0..255).
@@ -109,7 +104,7 @@ impl BoolEncoder {
             let prob = probs[i >> 1];
             let bit = (value & 1) != 0;
             self.put_bool(bit, prob);
-            
+
             let next = if !bit { tree[i] } else { tree[i + 1] };
             if next <= 0 {
                 break;

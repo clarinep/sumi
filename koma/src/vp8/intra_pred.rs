@@ -63,11 +63,7 @@ pub fn predict_16x16(
                 }
                 count += 16;
             }
-            let dc = if count > 0 {
-                ((sum + (count >> 1)) / count) as u8
-            } else {
-                128
-            };
+            let dc = if count > 0 { ((sum + (count >> 1)) / count) as u8 } else { 128 };
             dst.fill(dc);
         }
         Intra16Mode::V => {
@@ -130,11 +126,7 @@ pub fn predict_8x8(
                 }
                 count += 8;
             }
-            let dc = if count > 0 {
-                ((sum + (count >> 1)) / count) as u8
-            } else {
-                128
-            };
+            let dc = if count > 0 { ((sum + (count >> 1)) / count) as u8 } else { 128 };
             dst.fill(dc);
         }
         IntraChromaMode::V => {
@@ -176,10 +168,10 @@ pub fn predict_8x8(
 /// Computes 4x4 Subblock Prediction for directional mode (`B_PRED`).
 pub fn predict_4x4(
     mode: BMode,
-    above: &[u8; 8],     // [top0, top1, top2, top3, top4, top5, top6, top7]
-    left: &[u8; 4],      // [left0, left1, left2, left3]
-    top_left: u8,        // top-left sample
-    dst: &mut [u8; 16],  // 4x4 output
+    above: &[u8; 8],    // [top0, top1, top2, top3, top4, top5, top6, top7]
+    left: &[u8; 4],     // [left0, left1, left2, left3]
+    top_left: u8,       // top-left sample
+    dst: &mut [u8; 16], // 4x4 output
 ) {
     let a0 = above[0] as i32;
     let a1 = above[1] as i32;
@@ -244,11 +236,20 @@ pub fn predict_4x4(
             let d_3 = (a1 + 2 * a2 + a3 + 2) >> 2;
 
             dst[3 * 4 + 0] = d3 as u8;
-            dst[2 * 4 + 0] = d2 as u8; dst[3 * 4 + 1] = d2 as u8;
-            dst[1 * 4 + 0] = d1 as u8; dst[2 * 4 + 1] = d1 as u8; dst[3 * 4 + 2] = d1 as u8;
-            dst[0 * 4 + 0] = d0 as u8; dst[1 * 4 + 1] = d0 as u8; dst[2 * 4 + 2] = d0 as u8; dst[3 * 4 + 3] = d0 as u8;
-            dst[0 * 4 + 1] = d_1 as u8; dst[1 * 4 + 2] = d_1 as u8; dst[2 * 4 + 3] = d_1 as u8;
-            dst[0 * 4 + 2] = d_2 as u8; dst[1 * 4 + 3] = d_2 as u8;
+            dst[2 * 4 + 0] = d2 as u8;
+            dst[3 * 4 + 1] = d2 as u8;
+            dst[1 * 4 + 0] = d1 as u8;
+            dst[2 * 4 + 1] = d1 as u8;
+            dst[3 * 4 + 2] = d1 as u8;
+            dst[0 * 4 + 0] = d0 as u8;
+            dst[1 * 4 + 1] = d0 as u8;
+            dst[2 * 4 + 2] = d0 as u8;
+            dst[3 * 4 + 3] = d0 as u8;
+            dst[0 * 4 + 1] = d_1 as u8;
+            dst[1 * 4 + 2] = d_1 as u8;
+            dst[2 * 4 + 3] = d_1 as u8;
+            dst[0 * 4 + 2] = d_2 as u8;
+            dst[1 * 4 + 3] = d_2 as u8;
             dst[0 * 4 + 3] = d_3 as u8;
         }
         BMode::B_VR => {
@@ -260,14 +261,20 @@ pub fn predict_4x4(
             let d1 = (l1 + 2 * l0 + tl + 2) >> 2;
             let d2 = (l2 + 2 * l1 + l0 + 2) >> 2;
 
-            dst[0 * 4 + 0] = v_1 as u8; dst[2 * 4 + 1] = v_1 as u8;
-            dst[0 * 4 + 1] = v_2 as u8; dst[2 * 4 + 2] = v_2 as u8;
-            dst[0 * 4 + 2] = v_3 as u8; dst[2 * 4 + 3] = v_3 as u8;
+            dst[0 * 4 + 0] = v_1 as u8;
+            dst[2 * 4 + 1] = v_1 as u8;
+            dst[0 * 4 + 1] = v_2 as u8;
+            dst[2 * 4 + 2] = v_2 as u8;
+            dst[0 * 4 + 2] = v_3 as u8;
+            dst[2 * 4 + 3] = v_3 as u8;
             dst[0 * 4 + 3] = v_4 as u8;
 
-            dst[1 * 4 + 0] = d0 as u8; dst[3 * 4 + 1] = d0 as u8;
-            dst[1 * 4 + 1] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8; dst[3 * 4 + 2] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8;
-            dst[1 * 4 + 2] = ((a0 + 2 * a1 + a2 + 2) >> 2) as u8; dst[3 * 4 + 3] = ((a0 + 2 * a1 + a2 + 2) >> 2) as u8;
+            dst[1 * 4 + 0] = d0 as u8;
+            dst[3 * 4 + 1] = d0 as u8;
+            dst[1 * 4 + 1] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8;
+            dst[3 * 4 + 2] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8;
+            dst[1 * 4 + 2] = ((a0 + 2 * a1 + a2 + 2) >> 2) as u8;
+            dst[3 * 4 + 3] = ((a0 + 2 * a1 + a2 + 2) >> 2) as u8;
             dst[1 * 4 + 3] = ((a1 + 2 * a2 + a3 + 2) >> 2) as u8;
 
             dst[2 * 4 + 0] = d1 as u8;
@@ -282,11 +289,20 @@ pub fn predict_4x4(
             let ld5 = (a5 + 2 * a6 + a6 + 2) >> 2;
 
             dst[0 * 4 + 0] = ld0 as u8;
-            dst[0 * 4 + 1] = ld1 as u8; dst[1 * 4 + 0] = ld1 as u8;
-            dst[0 * 4 + 2] = ld2 as u8; dst[1 * 4 + 1] = ld2 as u8; dst[2 * 4 + 0] = ld2 as u8;
-            dst[0 * 4 + 3] = ld3 as u8; dst[1 * 4 + 2] = ld3 as u8; dst[2 * 4 + 1] = ld3 as u8; dst[3 * 4 + 0] = ld3 as u8;
-            dst[1 * 4 + 3] = ld4 as u8; dst[2 * 4 + 2] = ld4 as u8; dst[3 * 4 + 1] = ld4 as u8;
-            dst[2 * 4 + 3] = ld5 as u8; dst[3 * 4 + 2] = ld5 as u8;
+            dst[0 * 4 + 1] = ld1 as u8;
+            dst[1 * 4 + 0] = ld1 as u8;
+            dst[0 * 4 + 2] = ld2 as u8;
+            dst[1 * 4 + 1] = ld2 as u8;
+            dst[2 * 4 + 0] = ld2 as u8;
+            dst[0 * 4 + 3] = ld3 as u8;
+            dst[1 * 4 + 2] = ld3 as u8;
+            dst[2 * 4 + 1] = ld3 as u8;
+            dst[3 * 4 + 0] = ld3 as u8;
+            dst[1 * 4 + 3] = ld4 as u8;
+            dst[2 * 4 + 2] = ld4 as u8;
+            dst[3 * 4 + 1] = ld4 as u8;
+            dst[2 * 4 + 3] = ld5 as u8;
+            dst[3 * 4 + 2] = ld5 as u8;
             dst[3 * 4 + 3] = ld5 as u8;
         }
         BMode::B_VL => {
@@ -299,15 +315,23 @@ pub fn predict_4x4(
             let d2 = (a2 + 2 * a3 + a4 + 2) >> 2;
             let d3 = (a3 + 2 * a4 + a5 + 2) >> 2;
 
-            dst[0 * 4 + 0] = vl0 as u8; dst[2 * 4 + 0] = d0 as u8;
-            dst[0 * 4 + 1] = vl1 as u8; dst[2 * 4 + 1] = d1 as u8;
-            dst[0 * 4 + 2] = vl2 as u8; dst[2 * 4 + 2] = d2 as u8;
-            dst[0 * 4 + 3] = vl3 as u8; dst[2 * 4 + 3] = d3 as u8;
+            dst[0 * 4 + 0] = vl0 as u8;
+            dst[2 * 4 + 0] = d0 as u8;
+            dst[0 * 4 + 1] = vl1 as u8;
+            dst[2 * 4 + 1] = d1 as u8;
+            dst[0 * 4 + 2] = vl2 as u8;
+            dst[2 * 4 + 2] = d2 as u8;
+            dst[0 * 4 + 3] = vl3 as u8;
+            dst[2 * 4 + 3] = d3 as u8;
 
-            dst[1 * 4 + 0] = d0 as u8; dst[3 * 4 + 0] = vl1 as u8;
-            dst[1 * 4 + 1] = d1 as u8; dst[3 * 4 + 1] = vl2 as u8;
-            dst[1 * 4 + 2] = d2 as u8; dst[3 * 4 + 2] = vl3 as u8;
-            dst[1 * 4 + 3] = d3 as u8; dst[3 * 4 + 3] = ((a4 + a5 + 1) >> 1) as u8;
+            dst[1 * 4 + 0] = d0 as u8;
+            dst[3 * 4 + 0] = vl1 as u8;
+            dst[1 * 4 + 1] = d1 as u8;
+            dst[3 * 4 + 1] = vl2 as u8;
+            dst[1 * 4 + 2] = d2 as u8;
+            dst[3 * 4 + 2] = vl3 as u8;
+            dst[1 * 4 + 3] = d3 as u8;
+            dst[3 * 4 + 3] = ((a4 + a5 + 1) >> 1) as u8;
         }
         BMode::B_HD => {
             let h_1 = (l0 + tl + 1) >> 1;
@@ -317,15 +341,23 @@ pub fn predict_4x4(
             let h_3 = (l2 + l1 + 1) >> 1;
             let d2 = (l3 + 2 * l2 + l1 + 2) >> 2;
 
-            dst[0 * 4 + 0] = h_1 as u8; dst[0 * 4 + 2] = d0 as u8;
-            dst[1 * 4 + 0] = h_2 as u8; dst[1 * 4 + 2] = d1 as u8;
-            dst[2 * 4 + 0] = h_3 as u8; dst[2 * 4 + 2] = d2 as u8;
-            dst[3 * 4 + 0] = ((l3 + l2 + 1) >> 1) as u8; dst[3 * 4 + 2] = ((l3 + 2 * l3 + l2 + 2) >> 2) as u8;
+            dst[0 * 4 + 0] = h_1 as u8;
+            dst[0 * 4 + 2] = d0 as u8;
+            dst[1 * 4 + 0] = h_2 as u8;
+            dst[1 * 4 + 2] = d1 as u8;
+            dst[2 * 4 + 0] = h_3 as u8;
+            dst[2 * 4 + 2] = d2 as u8;
+            dst[3 * 4 + 0] = ((l3 + l2 + 1) >> 1) as u8;
+            dst[3 * 4 + 2] = ((l3 + 2 * l3 + l2 + 2) >> 2) as u8;
 
-            dst[0 * 4 + 1] = ((l0 + 2 * tl + a0 + 2) >> 2) as u8; dst[0 * 4 + 3] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8;
-            dst[1 * 4 + 1] = d0 as u8; dst[1 * 4 + 3] = ((l0 + 2 * tl + a0 + 2) >> 2) as u8;
-            dst[2 * 4 + 1] = d1 as u8; dst[2 * 4 + 3] = d0 as u8;
-            dst[3 * 4 + 1] = d2 as u8; dst[3 * 4 + 3] = d1 as u8;
+            dst[0 * 4 + 1] = ((l0 + 2 * tl + a0 + 2) >> 2) as u8;
+            dst[0 * 4 + 3] = ((tl + 2 * a0 + a1 + 2) >> 2) as u8;
+            dst[1 * 4 + 1] = d0 as u8;
+            dst[1 * 4 + 3] = ((l0 + 2 * tl + a0 + 2) >> 2) as u8;
+            dst[2 * 4 + 1] = d1 as u8;
+            dst[2 * 4 + 3] = d0 as u8;
+            dst[3 * 4 + 1] = d2 as u8;
+            dst[3 * 4 + 3] = d1 as u8;
         }
         BMode::B_HU => {
             let hu0 = (l0 + l1 + 1) >> 1;
@@ -335,10 +367,22 @@ pub fn predict_4x4(
             let d1 = (l1 + 2 * l2 + l3 + 2) >> 2;
             let d2 = (l2 + 2 * l3 + l3 + 2) >> 2;
 
-            dst[0 * 4 + 0] = hu0 as u8; dst[0 * 4 + 1] = d0 as u8; dst[0 * 4 + 2] = hu1 as u8; dst[0 * 4 + 3] = d1 as u8;
-            dst[1 * 4 + 0] = hu1 as u8; dst[1 * 4 + 1] = d1 as u8; dst[1 * 4 + 2] = hu2 as u8; dst[1 * 4 + 3] = d2 as u8;
-            dst[2 * 4 + 0] = hu2 as u8; dst[2 * 4 + 1] = d2 as u8; dst[2 * 4 + 2] = l3 as u8; dst[2 * 4 + 3] = l3 as u8;
-            dst[3 * 4 + 0] = l3 as u8;  dst[3 * 4 + 1] = l3 as u8; dst[3 * 4 + 2] = l3 as u8; dst[3 * 4 + 3] = l3 as u8;
+            dst[0 * 4 + 0] = hu0 as u8;
+            dst[0 * 4 + 1] = d0 as u8;
+            dst[0 * 4 + 2] = hu1 as u8;
+            dst[0 * 4 + 3] = d1 as u8;
+            dst[1 * 4 + 0] = hu1 as u8;
+            dst[1 * 4 + 1] = d1 as u8;
+            dst[1 * 4 + 2] = hu2 as u8;
+            dst[1 * 4 + 3] = d2 as u8;
+            dst[2 * 4 + 0] = hu2 as u8;
+            dst[2 * 4 + 1] = d2 as u8;
+            dst[2 * 4 + 2] = l3 as u8;
+            dst[2 * 4 + 3] = l3 as u8;
+            dst[3 * 4 + 0] = l3 as u8;
+            dst[3 * 4 + 1] = l3 as u8;
+            dst[3 * 4 + 2] = l3 as u8;
+            dst[3 * 4 + 3] = l3 as u8;
         }
     }
 }

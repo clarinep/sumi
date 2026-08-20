@@ -8,8 +8,10 @@
 //! 2. Context-aware bit-cost estimation from VP8 probability tables.
 //! 3. Perceptual frequency weighting to preserve sharp anime linework and fine background details.
 
-use super::prob_tables::{COEFF_BANDS, DEFAULT_COEFF_PROBS};
-use super::tables::ZIGZAG;
+use super::{
+    prob_tables::{COEFF_BANDS, DEFAULT_COEFF_PROBS},
+    tables::ZIGZAG,
+};
 
 /// Bit-cost lookup approximation in 1/256th bits.
 #[inline(always)]
@@ -114,7 +116,13 @@ pub fn trellis_quantize_4x4(
 
             // Perceptual frequency weighting: high frequencies weighted slightly lower for bit savings,
             // low frequencies preserved to prevent blockiness.
-            let freq_weight = if i == 0 { 128 } else if i < 6 { 100 } else { 80 };
+            let freq_weight = if i == 0 {
+                128
+            } else if i < 6 {
+                100
+            } else {
+                80
+            };
             let weighted_dist = (dist * freq_weight) >> 7;
 
             let cand_signed = cand * (sign as i16);

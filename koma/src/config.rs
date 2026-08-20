@@ -95,9 +95,7 @@ impl EncoderConfigBuilder {
     /// Creates a new builder with default settings.
     #[inline]
     pub fn new() -> Self {
-        Self {
-            config: EncoderConfig::default(),
-        }
+        Self { config: EncoderConfig::default() }
     }
 
     /// Sets the target lossy quality factor `[0.0, 100.0]`.

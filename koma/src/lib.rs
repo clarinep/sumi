@@ -11,11 +11,10 @@ pub mod pool;
 pub mod riff;
 pub mod vp8;
 
+use bytes::Bytes;
 pub use config::{AlphaFilter, EncoderConfig, EncoderConfigBuilder, Preset};
 pub use error::{KomaError, Result};
 pub use pool::{BufferPool, with_thread_scratch};
-
-use bytes::Bytes;
 
 /// Encodes raw RGBA (8-bit per channel) pixel buffer into compressed WebP format.
 pub fn encode_rgba_webp(
@@ -61,12 +60,7 @@ pub fn encode_rgba_webp(
     let vp8_payload = vp8::frame::encode_frame(&planar, &quantizer);
 
     // Step 4: Package into standard RIFF WebP container (VP8X + ALPH + VP8)
-    let webp_bytes = riff::package_webp_riff(
-        width,
-        height,
-        &vp8_payload,
-        alph_chunk.as_deref(),
-    );
+    let webp_bytes = riff::package_webp_riff(width, height, &vp8_payload, alph_chunk.as_deref());
 
     Ok(webp_bytes)
 }

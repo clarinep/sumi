@@ -48,7 +48,8 @@ impl AlphaEncoder {
                     *dst = *src; // Preserve exact fully transparent & opaque boundaries
                 } else {
                     let half = step / 2;
-                    let val = ((*src as u32 + half as u32) / step as u32 * step as u32).min(255) as u8;
+                    let val =
+                        ((*src as u32 + half as u32) / step as u32 * step as u32).min(255) as u8;
                     *dst = val;
                 }
             }
@@ -60,19 +61,23 @@ impl AlphaEncoder {
 
         let (chosen_filter, filtered_data) = match alpha_filter {
             AlphaFilter::None => {
-                let (_, buf) = Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::None);
+                let (_, buf) =
+                    Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::None);
                 (AlphaFilterMethod::None, buf)
             }
             AlphaFilter::Horizontal => {
-                let (_, buf) = Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Horizontal);
+                let (_, buf) =
+                    Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Horizontal);
                 (AlphaFilterMethod::Horizontal, buf)
             }
             AlphaFilter::Vertical => {
-                let (_, buf) = Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Vertical);
+                let (_, buf) =
+                    Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Vertical);
                 (AlphaFilterMethod::Vertical, buf)
             }
             AlphaFilter::Gradient => {
-                let (_, buf) = Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Gradient);
+                let (_, buf) =
+                    Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Gradient);
                 (AlphaFilterMethod::Gradient, buf)
             }
             AlphaFilter::Auto => Self::select_best_filter(alpha_slice, width, height),
@@ -143,16 +148,9 @@ impl AlphaEncoder {
                 } else {
                     0
                 };
-                let top = if y > 0 {
-                    alpha[prev_row_idx + x] as i32
-                } else {
-                    left
-                };
-                let top_left = if x > 0 && y > 0 {
-                    alpha[prev_row_idx + x - 1] as i32
-                } else {
-                    top
-                };
+                let top = if y > 0 { alpha[prev_row_idx + x] as i32 } else { left };
+                let top_left =
+                    if x > 0 && y > 0 { alpha[prev_row_idx + x - 1] as i32 } else { top };
 
                 let pred = match method {
                     AlphaFilterMethod::None => 0,

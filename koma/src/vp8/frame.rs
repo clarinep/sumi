@@ -3,14 +3,16 @@
 //! Handles 16x16 macroblock traversal, optimal Intra prediction mode selection (SAD/SSE),
 //! forward transforms, quantization, and context-adaptive token serialization into Partition 0 & 1.
 
-use super::bool_coder::BoolEncoder;
-use super::intra_pred::{predict_16x16, predict_8x8, Intra16Mode, IntraChromaMode};
-use super::loop_filter::{filter_horizontal_edge_16, filter_vertical_edge_16};
-use super::prob_tables::{COEFF_BANDS, DEFAULT_COEFF_PROBS};
-use super::quant::Quantizer;
-use super::simd::{sad_16x16, sad_8x8};
-use super::tables::{KF_Y_MODE_PROBS, KF_Y_MODE_TREE, UV_MODE_PROBS, UV_MODE_TREE, ZIGZAG};
-use super::transform::{fdct_4x4, idct_add_4x4, iwht_4x4, wht_4x4};
+use super::{
+    bool_coder::BoolEncoder,
+    intra_pred::{Intra16Mode, IntraChromaMode, predict_8x8, predict_16x16},
+    loop_filter::{filter_horizontal_edge_16, filter_vertical_edge_16},
+    prob_tables::{COEFF_BANDS, DEFAULT_COEFF_PROBS},
+    quant::Quantizer,
+    simd::{sad_8x8, sad_16x16},
+    tables::{KF_Y_MODE_PROBS, KF_Y_MODE_TREE, UV_MODE_PROBS, UV_MODE_TREE, ZIGZAG},
+    transform::{fdct_4x4, idct_add_4x4, iwht_4x4, wht_4x4},
+};
 use crate::color::Yuv420Planar;
 
 /// Encodes a full YUV420 planar frame into an RFC 6386 VP8 keyframe bitstream.
@@ -73,13 +75,8 @@ pub fn encode_frame(planar: &Yuv420Planar, quant: &Quantizer) -> Vec<u8> {
             part0.put_bool(false, 128);
 
             // 1. Evaluate 16x16 Luma Intra-Prediction Mode (Rate-Distortion SAD via SIMD)
-            let best_y_mode = select_best_16x16_y_mode(
-                &planar.y,
-                planar.y_stride,
-                &recon_y,
-                mb_x,
-                mb_y,
-            );
+            let best_y_mode =
+                select_best_16x16_y_mode(&planar.y, planar.y_stride, &recon_y, mb_x, mb_y);
 
             // Encode Y mode into Partition 0
             part0.put_tree(&KF_Y_MODE_TREE, &KF_Y_MODE_PROBS, best_y_mode as usize);
@@ -144,10 +141,24 @@ pub fn encode_frame(planar: &Yuv420Planar, quant: &Quantizer) -> Vec<u8> {
                 let limit = (filter_level as i32) * 2;
                 let thresh = filter_level as i32;
                 if mb_x > 0 {
-                    filter_vertical_edge_16(&mut recon_y, planar.y_stride, mb_x * 16, mb_y * 16, limit, thresh);
+                    filter_vertical_edge_16(
+                        &mut recon_y,
+                        planar.y_stride,
+                        mb_x * 16,
+                        mb_y * 16,
+                        limit,
+                        thresh,
+                    );
                 }
                 if mb_y > 0 {
-                    filter_horizontal_edge_16(&mut recon_y, planar.y_stride, mb_x * 16, mb_y * 16, limit, thresh);
+                    filter_horizontal_edge_16(
+                        &mut recon_y,
+                        planar.y_stride,
+                        mb_x * 16,
+                        mb_y * 16,
+                        limit,
+                        thresh,
+                    );
                 }
             }
         }
@@ -220,12 +231,7 @@ fn select_best_16x16_y_mode(
         None
     };
 
-    let modes = [
-        Intra16Mode::DC,
-        Intra16Mode::V,
-        Intra16Mode::H,
-        Intra16Mode::TM,
-    ];
+    let modes = [Intra16Mode::DC, Intra16Mode::V, Intra16Mode::H, Intra16Mode::TM];
 
     let mut best_mode = Intra16Mode::DC;
     let mut best_sad = u32::MAX;
@@ -292,12 +298,7 @@ fn select_best_8x8_uv_mode(
         None
     };
 
-    let modes = [
-        IntraChromaMode::DC,
-        IntraChromaMode::V,
-        IntraChromaMode::H,
-        IntraChromaMode::TM,
-    ];
+    let modes = [IntraChromaMode::DC, IntraChromaMode::V, IntraChromaMode::H, IntraChromaMode::TM];
 
     let mut best_mode = IntraChromaMode::DC;
     let mut best_sad = u32::MAX;
@@ -374,7 +375,8 @@ fn encode_luma_16x16(
                 let orig_row = (mb_y * 16 + by * 4 + y) * stride + (mb_x * 16 + bx * 4);
                 let pred_row = (by * 4 + y) * 16 + (bx * 4);
                 for x in 0..4 {
-                    diff[y * 4 + x] = (orig[orig_row + x] as i16) - (pred_block[pred_row + x] as i16);
+                    diff[y * 4 + x] =
+                        (orig[orig_row + x] as i16) - (pred_block[pred_row + x] as i16);
                 }
             }
 
@@ -492,7 +494,8 @@ fn encode_chroma_8x8(
                 let orig_row = (mb_y * 8 + by * 4 + y) * stride + (mb_x * 8 + bx * 4);
                 let pred_row = (by * 4 + y) * 8 + (bx * 4);
                 for x in 0..4 {
-                    diff[y * 4 + x] = (orig[orig_row + x] as i16) - (pred_block[pred_row + x] as i16);
+                    diff[y * 4 + x] =
+                        (orig[orig_row + x] as i16) - (pred_block[pred_row + x] as i16);
                 }
             }
 

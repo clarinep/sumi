@@ -1,7 +1,7 @@
 //! Lock-free memory pool for recycling byte buffers across concurrent encoding threads.
 
-use std::cell::RefCell;
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
+
 use bytes::BytesMut;
 use crossbeam_queue::ArrayQueue;
 
@@ -29,9 +29,7 @@ impl Default for BufferPool {
 impl BufferPool {
     /// Creates a new global buffer pool.
     pub fn new() -> Self {
-        Self {
-            queue: Arc::new(ArrayQueue::new(POOL_CAPACITY)),
-        }
+        Self { queue: Arc::new(ArrayQueue::new(POOL_CAPACITY)) }
     }
 
     /// Acquires a clean `BytesMut` buffer with at least `min_capacity` bytes.
