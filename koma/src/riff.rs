@@ -1,92 +1,79 @@
-//! RIFF and WebP container chunk assembly.
-//!
-//! Handles packaging of VP8 lossy bitstreams, alpha payloads (ALPH), and extended
-//! container headers (VP8X) into standard RFC WebP containers without dynamic memory allocations.
+//! RIFF WebP container packaging for Simple and Extended WebP bitstreams.
 
-use crate::error::{KomaError, Result};
+use bytes::{Bytes, BytesMut};
 
-pub const RIFF_MAGIC: &[u8; 4] = b"RIFF";
-pub const WEBP_MAGIC: &[u8; 4] = b"WEBP";
-pub const VP8X_MAGIC: &[u8; 4] = b"VP8X";
-pub const ALPH_MAGIC: &[u8; 4] = b"ALPH";
-pub const VP8_MAGIC: &[u8; 4] = b"VP8 ";
+/// Writes a 32-bit little-endian FourCC tag and chunk length.
+#[inline(always)]
+fn write_chunk_header(out: &mut Vec<u8>, tag: &[u8; 4], len: u32) {
+    out.extend_from_slice(tag);
+    out.extend_from_slice(&len.to_le_bytes());
+}
 
-/// Assembles the outer WebP / RIFF container into the destination buffer.
-///
-/// Encapsulates raw VP8 frames and optional ALPH chunks into a compliant WebP container
-/// formatted according to Google WebP container specifications.
-///
-/// # Errors
-///
-/// Returns [`KomaError::EncodeFailure`] if the total payload size exceeds 4GB WebP limits.
-#[inline]
-pub fn assemble_webp(
+/// Packages a VP8 lossy bitstream and optional alpha stream into a complete RIFF WebP file.
+pub fn package_webp_riff(
     width: u32,
     height: u32,
     vp8_payload: &[u8],
-    alpha_payload: Option<&[u8]>,
-    target: &mut Vec<u8>,
-) -> Result<()> {
-    target.clear();
+    alph_payload: Option<&[u8]>,
+) -> Bytes {
+    let has_alpha = alph_payload.is_some();
 
-    let vp8_padding = vp8_payload.len() & 1;
-    let mut total_body_size = 4 + 8 + vp8_payload.len() + vp8_padding; // "WEBP" + "VP8 " chunk
+    if !has_alpha {
+        // Simple WebP File Format:
+        // 'RIFF' (4) + FileSize (4) + 'WEBP' (4) + 'VP8 ' (4) + VP8Size (4) + Payload + [pad]
+        let vp8_pad = vp8_payload.len() % 2;
+        let riff_payload_len = 4 + 8 + vp8_payload.len() + vp8_pad;
+        let total_file_size = 8 + riff_payload_len;
 
-    if let Some(alpha) = alpha_payload {
-        let alpha_padding = alpha.len() & 1;
-        total_body_size += 18 + 8 + alpha.len() + alpha_padding; // VP8X chunk (18 bytes) + ALPH chunk
-    }
+        let mut out = Vec::with_capacity(total_file_size);
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(riff_payload_len as u32).to_le_bytes());
+        out.extend_from_slice(b"WEBP");
 
-    if total_body_size > u32::MAX as usize - 16 {
-        tracing::error!("encode_rgba failed: container size overflow");
-        return Err(KomaError::EncodeFailure("container size overflow"));
-    }
-
-    target.reserve(total_body_size + 8);
-
-    // RIFF chunk header
-    target.extend_from_slice(RIFF_MAGIC);
-    target.extend_from_slice(&(total_body_size as u32).to_le_bytes());
-    target.extend_from_slice(WEBP_MAGIC);
-
-    // Extended VP8X header if alpha channel present
-    if let Some(alpha) = alpha_payload {
-        target.extend_from_slice(VP8X_MAGIC);
-        target.extend_from_slice(&10u32.to_le_bytes()); // VP8X payload is always 10 bytes
-
-        let flags: u8 = 1 << 4; // Alpha flag (bit 4)
-        target.push(flags);
-        target.push(0);
-        target.push(0);
-        target.push(0);
-
-        let canvas_w = width.saturating_sub(1);
-        let canvas_h = height.saturating_sub(1);
-
-        target.push((canvas_w & 0xFF) as u8);
-        target.push(((canvas_w >> 8) & 0xFF) as u8);
-        target.push(((canvas_w >> 16) & 0xFF) as u8);
-
-        target.push((canvas_h & 0xFF) as u8);
-        target.push(((canvas_h >> 8) & 0xFF) as u8);
-        target.push(((canvas_h >> 16) & 0xFF) as u8);
-
-        // ALPH chunk
-        target.extend_from_slice(ALPH_MAGIC);
-        target.extend_from_slice(&(alpha.len() as u32).to_le_bytes());
-        target.extend_from_slice(alpha);
-        if (alpha.len() & 1) != 0 {
-            target.push(0);
+        write_chunk_header(&mut out, b"VP8 ", vp8_payload.len() as u32);
+        out.extend_from_slice(vp8_payload);
+        if vp8_pad > 0 {
+            out.push(0);
         }
-    }
 
-    // VP8 lossy frame chunk
-    target.extend_from_slice(VP8_MAGIC);
-    target.extend_from_slice(&(vp8_payload.len() as u32).to_le_bytes());
-    target.extend_from_slice(vp8_payload);
-    if vp8_padding != 0 {
-        target.push(0);
-    }
+        Bytes::from(out)
+    } else {
+        // Extended WebP File Format (VP8X + ALPH + VP8):
+        let alph = alph_payload.unwrap();
+        let vp8x_data = crate::alpha::build_vp8x_payload(width, height, true);
 
-    Ok(())
+        let vp8x_chunk_len = 8 + 10; // 'VP8X' + 10 bytes payload (even, no pad)
+        let alph_pad = alph.len() % 2;
+        let alph_chunk_len = 8 + alph.len() + alph_pad;
+        let vp8_pad = vp8_payload.len() % 2;
+        let vp8_chunk_len = 8 + vp8_payload.len() + vp8_pad;
+
+        let riff_payload_len = 4 + vp8x_chunk_len + alph_chunk_len + vp8_chunk_len;
+        let total_file_size = 8 + riff_payload_len;
+
+        let mut out = Vec::with_capacity(total_file_size);
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(riff_payload_len as u32).to_le_bytes());
+        out.extend_from_slice(b"WEBP");
+
+        // VP8X Chunk
+        write_chunk_header(&mut out, b"VP8X", 10);
+        out.extend_from_slice(&vp8x_data);
+
+        // ALPH Chunk
+        write_chunk_header(&mut out, b"ALPH", alph.len() as u32);
+        out.extend_from_slice(alph);
+        if alph_pad > 0 {
+            out.push(0);
+        }
+
+        // VP8 Chunk
+        write_chunk_header(&mut out, b"VP8 ", vp8_payload.len() as u32);
+        out.extend_from_slice(vp8_payload);
+        if vp8_pad > 0 {
+            out.push(0);
+        }
+
+        Bytes::from(out)
+    }
 }
