@@ -566,11 +566,11 @@ pub fn forward_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let col_c1 = vsubq_s32(u1, u2);
         let col_d1 = vsubq_s32(u0, u3);
 
-        let k3 = vdupq_n_s32(3);
-        let o0 = vshrq_n_s32(vaddq_s32(vaddq_s32(col_a1, col_b1), k3), 3);
-        let o1 = vshrq_n_s32(vaddq_s32(vaddq_s32(col_c1, col_d1), k3), 3);
-        let o2 = vshrq_n_s32(vaddq_s32(vsubq_s32(col_a1, col_b1), k3), 3);
-        let o3 = vshrq_n_s32(vaddq_s32(vsubq_s32(col_d1, col_c1), k3), 3);
+        let k1 = vdupq_n_s32(1);
+        let o0 = vshrq_n_s32(vaddq_s32(vaddq_s32(col_a1, col_b1), k1), 1);
+        let o1 = vshrq_n_s32(vaddq_s32(vaddq_s32(col_c1, col_d1), k1), 1);
+        let o2 = vshrq_n_s32(vaddq_s32(vsubq_s32(col_a1, col_b1), k1), 1);
+        let o3 = vshrq_n_s32(vaddq_s32(vsubq_s32(col_d1, col_c1), k1), 1);
 
         let out01_16 = vcombine_s16(vmovn_s32(o0), vmovn_s32(o1));
         let out23_16 = vcombine_s16(vmovn_s32(o2), vmovn_s32(o3));
@@ -634,11 +634,11 @@ pub fn forward_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
         let col_c1 = _mm_sub_epi32(u1, u2);
         let col_d1 = _mm_sub_epi32(u0, u3);
 
-        let k3 = _mm_set1_epi32(3);
-        let o0 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_a1, col_b1), k3), 3);
-        let o1 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_c1, col_d1), k3), 3);
-        let o2 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_a1, col_b1), k3), 3);
-        let o3 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_d1, col_c1), k3), 3);
+        let k1 = _mm_set1_epi32(1);
+        let o0 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_a1, col_b1), k1), 1);
+        let o1 = _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(col_c1, col_d1), k1), 1);
+        let o2 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_a1, col_b1), k1), 1);
+        let o3 = _mm_srai_epi32(_mm_add_epi32(_mm_sub_epi32(col_d1, col_c1), k1), 1);
 
         let out01_16 = _mm_packs_epi32(o0, o1);
         let out23_16 = _mm_packs_epi32(o2, o3);
@@ -667,10 +667,10 @@ pub fn forward_wht_4x4(input: &[i16; 16], output: &mut [i16; 16]) {
             let b1 = intermediate[i + 4] + intermediate[i + 8];
             let c1 = intermediate[i + 4] - intermediate[i + 8];
             let d1 = intermediate[i] - intermediate[i + 12];
-            output[i] = ((a1 + b1 + 3) >> 3) as i16;
-            output[i + 4] = ((c1 + d1 + 3) >> 3) as i16;
-            output[i + 8] = ((a1 - b1 + 3) >> 3) as i16;
-            output[i + 12] = ((d1 - c1 + 3) >> 3) as i16;
+            output[i] = ((a1 + b1 + 1) >> 1) as i16;
+            output[i + 4] = ((c1 + d1 + 1) >> 1) as i16;
+            output[i + 8] = ((a1 - b1 + 1) >> 1) as i16;
+            output[i + 12] = ((d1 - c1 + 1) >> 1) as i16;
         }
     }
 }
