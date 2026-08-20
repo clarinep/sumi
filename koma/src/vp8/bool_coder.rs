@@ -71,7 +71,7 @@ impl BoolEncoder {
                 }
             }
 
-            let mut out = (self.low >> (24 - offset)) as u8;
+            let out = (self.low >> (24 - offset)) as u8;
             self.buffer.push(out);
             self.low <<= 8;
             self.count -= 8;
@@ -125,7 +125,7 @@ impl BoolEncoder {
         self.range = self.range.wrapping_shl((self.range as u8).leading_zeros());
 
         while shift > 0 {
-            let mut out = (self.low >> (shift + 8)) as u8;
+            let out = (self.low >> (shift + 8)) as u8;
             if (self.low << (24 - shift)) & 0x8000_0000 != 0 {
                 let mut idx = self.buffer.len();
                 while idx > 0 {
