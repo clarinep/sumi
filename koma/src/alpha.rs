@@ -1,147 +1,201 @@
-//! Lossless WebP alpha plane extraction and ALPH chunk compression.
+//! WebP Alpha plane filtering, ALPH chunk serialization, and extended container support.
 //!
-//! Handles alpha channel extraction from interleaved RGBA buffers, detecting
-//! transparency and packaging compliant WebP ALPH chunks with RFC filtering methods
-//! (Horizontal, Vertical, Gradient) with zero runtime heap allocations.
+//! Complies with the WebP Extended File Format Specification:
+//! - RIFF WebP container with `VP8X` extended header chunk
+//! - `ALPH` alpha bitstream chunk with directional spatial prediction filters
 
-pub const ALPH_FILTER_NONE: u8 = 0;
-pub const ALPH_FILTER_HORIZONTAL: u8 = 1;
-pub const ALPH_FILTER_VERTICAL: u8 = 2;
-pub const ALPH_FILTER_GRADIENT: u8 = 3;
+use crate::config::AlphaFilter;
 
-pub const ALPH_NO_COMPRESSION: u8 = 0;
-pub const ALPH_LOSSLESS_COMPRESSION: u8 = 1;
+/// Directional prediction filtering method for the alpha channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AlphaFilterMethod {
+    /// No filtering (raw sample bytes).
+    None = 0,
+    /// Horizontal predictor: `A[x, y] - A[x-1, y]`.
+    Horizontal = 1,
+    /// Vertical predictor: `A[x, y] - A[x, y-1]`.
+    Vertical = 2,
+    /// Gradient predictor: `A[x, y] - clamp(A[x-1, y] + A[x, y-1] - A[x-1, y-1])`.
+    Gradient = 3,
+}
 
-/// Applies RFC WebP horizontal filter: `residual = (alpha - predictor) % 256`.
-///
-/// Top-left (0,0) uses 0 predictor. Row starts (0, y) use pixel above (0, y-1).
-/// All other pixels use left neighbor.
-///
-/// Vectorized across ARM NEON and x86 SSE2/SSSE3 with 16-byte SIMD diff strides.
-#[inline]
-pub fn filter_alpha_horizontal(src: &[u8], width: usize, height: usize, dst: &mut [u8]) {
-    if width == 0 || height == 0 {
-        return;
+/// WebP ALPH chunk generator with spatial prediction filtering.
+pub struct AlphaEncoder;
+
+impl AlphaEncoder {
+    /// Encodes raw alpha plane (`width * height` bytes) into a formatted `ALPH` chunk payload.
+    ///
+    /// Supports both lossless 8-bit alpha (alpha_quality = 100) and lossy alpha quantization (alpha_quality < 100).
+    /// When `alpha_filter` is `AlphaFilter::None`, bypasses spatial variance search for maximum encoding throughput.
+    pub fn encode_alpha(
+        alpha: &[u8],
+        width: usize,
+        height: usize,
+        alpha_quality: u8,
+        alpha_filter: AlphaFilter,
+    ) -> Vec<u8> {
+        assert_eq!(alpha.len(), width * height);
+
+        let quantized_alpha;
+        let alpha_slice = if alpha_quality < 100 {
+            // Adaptive lossy alpha quantizer
+            // Levels: 256 (q=100), down to 32 (q=50), 8 (q=0)
+            let step = ((100 - alpha_quality as u32) * 7 / 100 + 1) as u8;
+            let mut q_buf = vec![0u8; alpha.len()];
+            for (src, dst) in alpha.iter().zip(q_buf.iter_mut()) {
+                if *src == 0 || *src == 255 {
+                    *dst = *src; // Preserve exact fully transparent & opaque boundaries
+                } else {
+                    let half = step / 2;
+                    let val = ((*src as u32 + half as u32) / step as u32 * step as u32).min(255) as u8;
+                    *dst = val;
+                }
+            }
+            quantized_alpha = q_buf;
+            &quantized_alpha[..]
+        } else {
+            alpha
+        };
+
+        let (chosen_filter, filtered_data) = match alpha_filter {
+            AlphaFilter::None => {
+                let (_, buf) = Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::None);
+                (AlphaFilterMethod::None, buf)
+            }
+            AlphaFilter::Horizontal => {
+                let (_, buf) = Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Horizontal);
+                (AlphaFilterMethod::Horizontal, buf)
+            }
+            AlphaFilter::Vertical => {
+                let (_, buf) = Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Vertical);
+                (AlphaFilterMethod::Vertical, buf)
+            }
+            AlphaFilter::Gradient => {
+                let (_, buf) = Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Gradient);
+                (AlphaFilterMethod::Gradient, buf)
+            }
+            AlphaFilter::Auto => Self::select_best_filter(alpha_slice, width, height),
+        };
+
+        // Header byte:
+        // Bits 0-1: Preprocessing (0 = None)
+        // Bits 2-3: Filtering Method
+        // Bits 4-5: Compression (0 = Uncompressed raw stream)
+        // Bits 6-7: Reserved (0)
+        let header_byte = ((chosen_filter as u8) & 0x03) << 2;
+
+        let mut output = Vec::with_capacity(1 + filtered_data.len());
+        output.push(header_byte);
+        output.extend_from_slice(&filtered_data);
+        output
     }
 
-    // (0, 0)
-    dst[0] = src[0];
+    /// Evaluates spatial filters and returns the optimal filter and its filtered output.
+    fn select_best_filter(
+        alpha: &[u8],
+        width: usize,
+        height: usize,
+    ) -> (AlphaFilterMethod, Vec<u8>) {
+        let mut best_method = AlphaFilterMethod::None;
+        let mut best_score = usize::MAX;
+        let mut best_buf = Vec::new();
 
-    // First row: predictor is left pixel
-    let mut x = 1;
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        while x + 16 <= width {
-            let curr = vld1q_u8(src.as_ptr().add(x));
-            let prev = vld1q_u8(src.as_ptr().add(x - 1));
-            let diff = vsubq_u8(curr, prev);
-            vst1q_u8(dst.as_mut_ptr().add(x), diff);
-            x += 16;
-        }
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        while x + 16 <= width {
-            let curr = _mm_loadu_si128(src.as_ptr().add(x) as *const __m128i);
-            let prev = _mm_loadu_si128(src.as_ptr().add(x - 1) as *const __m128i);
-            let diff = _mm_sub_epi8(curr, prev);
-            _mm_storeu_si128(dst.as_mut_ptr().add(x) as *mut __m128i, diff);
-            x += 16;
-        }
-    }
-    while x < width {
-        dst[x] = src[x].wrapping_sub(src[x - 1]);
-        x += 1;
-    }
+        let methods = [
+            AlphaFilterMethod::None,
+            AlphaFilterMethod::Horizontal,
+            AlphaFilterMethod::Vertical,
+            AlphaFilterMethod::Gradient,
+        ];
 
-    // Remaining rows
-    for y in 1..height {
-        let row_start = y * width;
-        let prev_row_start = (y - 1) * width;
-
-        // (0, y) uses pixel above (0, y - 1)
-        dst[row_start] = src[row_start].wrapping_sub(src[prev_row_start]);
-
-        let mut x = 1;
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            while x + 16 <= width {
-                let curr = vld1q_u8(src.as_ptr().add(row_start + x));
-                let prev = vld1q_u8(src.as_ptr().add(row_start + x - 1));
-                let diff = vsubq_u8(curr, prev);
-                vst1q_u8(dst.as_mut_ptr().add(row_start + x), diff);
-                x += 16;
+        for method in methods {
+            let (score, buf) = Self::apply_filter(alpha, width, height, method);
+            if score < best_score {
+                best_score = score;
+                best_method = method;
+                best_buf = buf;
             }
         }
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            while x + 16 <= width {
-                let curr = _mm_loadu_si128(src.as_ptr().add(row_start + x) as *const __m128i);
-                let prev = _mm_loadu_si128(src.as_ptr().add(row_start + x - 1) as *const __m128i);
-                let diff = _mm_sub_epi8(curr, prev);
-                _mm_storeu_si128(dst.as_mut_ptr().add(row_start + x) as *mut __m128i, diff);
-                x += 16;
+
+        (best_method, best_buf)
+    }
+
+    /// Applies the specified filter and computes its total absolute gradient score.
+    fn apply_filter(
+        alpha: &[u8],
+        width: usize,
+        height: usize,
+        method: AlphaFilterMethod,
+    ) -> (usize, Vec<u8>) {
+        let mut out = vec![0u8; width * height];
+        let mut total_energy: usize = 0;
+
+        for y in 0..height {
+            let row_idx = y * width;
+            let prev_row_idx = if y > 0 { (y - 1) * width } else { 0 };
+
+            for x in 0..width {
+                let current = alpha[row_idx + x] as i32;
+                let left = if x > 0 {
+                    alpha[row_idx + x - 1] as i32
+                } else if y > 0 {
+                    alpha[prev_row_idx] as i32
+                } else {
+                    0
+                };
+                let top = if y > 0 {
+                    alpha[prev_row_idx + x] as i32
+                } else {
+                    left
+                };
+                let top_left = if x > 0 && y > 0 {
+                    alpha[prev_row_idx + x - 1] as i32
+                } else {
+                    top
+                };
+
+                let pred = match method {
+                    AlphaFilterMethod::None => 0,
+                    AlphaFilterMethod::Horizontal => left,
+                    AlphaFilterMethod::Vertical => top,
+                    AlphaFilterMethod::Gradient => {
+                        let grad = left + top - top_left;
+                        grad.clamp(0, 255)
+                    }
+                };
+
+                let diff = ((current - pred) & 0xFF) as u8;
+                out[row_idx + x] = diff;
+
+                // Center energy around zero (treat > 128 as negative)
+                let signed_diff = if diff > 128 { 256 - diff as usize } else { diff as usize };
+                total_energy += signed_diff;
             }
         }
-        while x < width {
-            let idx = row_start + x;
-            dst[idx] = src[idx].wrapping_sub(src[idx - 1]);
-            x += 1;
-        }
+
+        (total_energy, out)
     }
 }
 
-#[cfg(target_arch = "aarch64")]
-use std::arch::aarch64::*;
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-
-/// Extracts alpha plane from interleaved RGBA pixel data and compresses it into an ALPH chunk.
-///
-/// Returns `true` if non-opaque pixels (`alpha < 255`) were detected, indicating that
-/// an extended WebP VP8X header and ALPH chunk must be emitted.
-///
-/// Optimized using SIMD vector extraction (x86 SSE2/SSSE3 & ARM NEON) to maximize throughput.
-#[inline]
-pub fn extract_and_compress_alpha(
-    rgba: &[u8],
-    width: usize,
-    height: usize,
-    alpha_plane: &mut [u8],
-    alph_chunk: &mut Vec<u8>,
-) -> bool {
-    let total_pixels = width * height;
-    let dst_slice = &mut alpha_plane[..total_pixels];
-    let mut has_transparency = false;
-
-    for (pixel_idx, chunk) in rgba.chunks_exact(4).take(total_pixels).enumerate() {
-        let a = chunk[3];
-        dst_slice[pixel_idx] = a;
-        if a != 255 {
-            has_transparency = true;
-        }
+/// Builds the 10-byte payload for a standard WebP `VP8X` extended header chunk.
+pub fn build_vp8x_payload(width: u32, height: u32, has_alpha: bool) -> [u8; 10] {
+    let mut payload = [0u8; 10];
+    if has_alpha {
+        payload[0] |= 0x10; // Bit 4: Alpha flag
     }
 
-    if !has_transparency {
-        alph_chunk.clear();
-        return false;
-    }
+    let w_minus_1 = (width.saturating_sub(1)) & 0x00FF_FFFF;
+    let h_minus_1 = (height.saturating_sub(1)) & 0x00FF_FFFF;
 
-    alph_chunk.clear();
-    alph_chunk.reserve(1 + total_pixels);
+    // 24-bit Canvas Width (1-based, stored as width - 1)
+    payload[4] = (w_minus_1 & 0xFF) as u8;
+    payload[5] = ((w_minus_1 >> 8) & 0xFF) as u8;
+    payload[6] = ((w_minus_1 >> 16) & 0xFF) as u8;
 
-    // 2. Format WebP ALPH chunk payload (RFC standard: 1 header byte + raw alpha plane)
-    // Bits 0-1: Preprocessing (0 = None)
-    // Bits 2-3: Filtering (0 = None)
-    // Bits 4-5: Compression (0 = Uncompressed)
-    let header_byte: u8 = (ALPH_FILTER_NONE << 2) | ALPH_NO_COMPRESSION;
-    alph_chunk.push(header_byte);
+    // 24-bit Canvas Height (1-based, stored as height - 1)
+    payload[7] = (h_minus_1 & 0xFF) as u8;
+    payload[8] = ((h_minus_1 >> 8) & 0xFF) as u8;
+    payload[9] = ((h_minus_1 >> 16) & 0xFF) as u8;
 
-    let start_len = alph_chunk.len();
-    alph_chunk.resize(start_len + total_pixels, 0);
-
-    // Uncompressed alpha must NOT be filtered. Copy directly.
-    alph_chunk[start_len..start_len + total_pixels].copy_from_slice(&alpha_plane[..total_pixels]);
-
-    true
+    payload
 }
