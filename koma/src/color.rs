@@ -56,7 +56,11 @@ impl Yuv420Planar {
             y: vec![0u8; y_stride * y_height],
             u: vec![128u8; uv_stride * uv_height],
             v: vec![128u8; uv_stride * uv_height],
-            alpha: if with_alpha { Some(vec![255u8; width * height]) } else { None },
+            alpha: if with_alpha {
+                Some(vec![255u8; width * height])
+            } else {
+                None
+            },
             has_alpha: false,
         }
     }
@@ -97,7 +101,11 @@ fn rgb_to_v(r: i32, g: i32, b: i32) -> u8 {
 }
 
 /// Converts raw RGBA (8-bit per channel, 32bpp) into planar [`Yuv420Planar`] with alpha.
-pub fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Planar {
+pub fn rgba_to_yuv420(
+    rgba: &[u8],
+    width: usize,
+    height: usize,
+) -> Yuv420Planar {
     let mut planar = Yuv420Planar::new(width, height, true);
     let mut has_transparency = false;
 
@@ -131,7 +139,12 @@ pub fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Planar 
             // Fetch (col0, row0)
             let (r00, g00, b00, a00) = if valid_col0 {
                 let idx = (row0 * width + col0) * 4;
-                (rgba[idx] as i32, rgba[idx + 1] as i32, rgba[idx + 2] as i32, rgba[idx + 3])
+                (
+                    rgba[idx] as i32,
+                    rgba[idx + 1] as i32,
+                    rgba[idx + 2] as i32,
+                    rgba[idx + 3],
+                )
             } else {
                 (0, 0, 0, 255)
             };
@@ -139,7 +152,12 @@ pub fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Planar 
             // Fetch (col1, row0)
             let (r10, g10, b10, a10) = if valid_col1 {
                 let idx = (row0 * width + col1) * 4;
-                (rgba[idx] as i32, rgba[idx + 1] as i32, rgba[idx + 2] as i32, rgba[idx + 3])
+                (
+                    rgba[idx] as i32,
+                    rgba[idx + 1] as i32,
+                    rgba[idx + 2] as i32,
+                    rgba[idx + 3],
+                )
             } else {
                 (r00, g00, b00, a00)
             };
@@ -147,7 +165,12 @@ pub fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Planar 
             // Fetch (col0, row1)
             let (r01, g01, b01, a01) = if valid_row1 && valid_col0 {
                 let idx = (row1 * width + col0) * 4;
-                (rgba[idx] as i32, rgba[idx + 1] as i32, rgba[idx + 2] as i32, rgba[idx + 3])
+                (
+                    rgba[idx] as i32,
+                    rgba[idx + 1] as i32,
+                    rgba[idx + 2] as i32,
+                    rgba[idx + 3],
+                )
             } else {
                 (r00, g00, b00, a00)
             };
@@ -155,7 +178,12 @@ pub fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Planar 
             // Fetch (col1, row1)
             let (r11, g11, b11, a11) = if valid_row1 && valid_col1 {
                 let idx = (row1 * width + col1) * 4;
-                (rgba[idx] as i32, rgba[idx + 1] as i32, rgba[idx + 2] as i32, rgba[idx + 3])
+                (
+                    rgba[idx] as i32,
+                    rgba[idx + 1] as i32,
+                    rgba[idx + 2] as i32,
+                    rgba[idx + 3],
+                )
             } else {
                 (r10, g10, b10, a10)
             };
@@ -199,10 +227,18 @@ pub fn rgba_to_yuv420(rgba: &[u8], width: usize, height: usize) -> Yuv420Planar 
                 y_plane[row1 * y_stride + col1] = y11;
             }
 
-            // 2x2 box filter average for Chroma U and V
-            let r_avg = (r00 + r10 + r01 + r11 + 2) >> 2;
-            let g_avg = (g00 + g10 + g01 + g11 + 2) >> 2;
-            let b_avg = (b00 + b10 + b01 + b11 + 2) >> 2;
+            // 2x2 alpha-weighted box filter average for Chroma U and V
+            // (Patched to fix transparency bleeding)
+            let weight = a00 as i32 + a10 as i32 + a01 as i32 + a11 as i32;
+            let (r_avg, g_avg, b_avg) = if weight > 0 {
+                (
+                    (r00 * (a00 as i32) + r10 * (a10 as i32) + r01 * (a01 as i32) + r11 * (a11 as i32) + weight / 2) / weight,
+                    (g00 * (a00 as i32) + g10 * (a10 as i32) + g01 * (a01 as i32) + g11 * (a11 as i32) + weight / 2) / weight,
+                    (b00 * (a00 as i32) + b10 * (a10 as i32) + b01 * (a01 as i32) + b11 * (a11 as i32) + weight / 2) / weight,
+                )
+            } else {
+                (0, 0, 0)
+            };
 
             let u_val = rgb_to_u(r_avg, g_avg, b_avg);
             let v_val = rgb_to_v(r_avg, g_avg, b_avg);
