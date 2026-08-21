@@ -153,12 +153,7 @@ impl CardCache {
 
                     let result = task::spawn_blocking(move || {
                         match webpx::decode_rgba(&file_bytes) {
-                            Ok((mut pixels, width, height)) => {
-                                // Force opaque alpha (fix for transparent cards)
-                                for i in (3..pixels.len()).step_by(4) {
-                                    pixels[i] = 255;
-                                }
-
+                            Ok((pixels, width, height)) => {
                                 if width != 725 || height != 1040 {
                                     tracing::warn!(
                                         "card '{}' dimension is {}x{} (expected 725x1040)",
@@ -235,7 +230,7 @@ impl CardCache {
         }
 
         let arc_img = task::spawn_blocking(move || {
-            let (mut pixels, width, height) = webpx::decode_rgba(&file_bytes)
+            let (pixels, width, height) = webpx::decode_rgba(&file_bytes)
                 .map_err(|e| {
                     RenderError::Internal(format!(
                         "failed to decode webp for '{}': {e:?}",
@@ -243,10 +238,6 @@ impl CardCache {
                     ))
                 })?;
 
-            // Force opaque alpha (fix for transparent cards)
-            for i in (3..pixels.len()).step_by(4) {
-                pixels[i] = 255;
-            }
             if width != 725 || height != 1040 {
                 tracing::warn!(
                     "card '{}' dimension is {}x{} (expected 725x1040)",
