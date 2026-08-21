@@ -3,16 +3,14 @@
 //! Handles 16x16 macroblock traversal, optimal Intra prediction mode selection (SAD/SSE),
 //! forward transforms, quantization, and context-adaptive token serialization into Partition 0 & 1.
 
-use super::{
-    bool_coder::BoolEncoder,
-    intra_pred::{Intra16Mode, IntraChromaMode, predict_8x8, predict_16x16},
-    loop_filter::{filter_horizontal_edge_16, filter_vertical_edge_16},
-    prob_tables::{COEFF_BANDS, DEFAULT_COEFF_PROBS},
-    quant::Quantizer,
-    simd::{sad_8x8, sad_16x16},
-    tables::{KF_Y_MODE_PROBS, KF_Y_MODE_TREE, UV_MODE_PROBS, UV_MODE_TREE, ZIGZAG},
-    transform::{fdct_4x4, idct_add_4x4, iwht_4x4, wht_4x4},
-};
+use super::bool_coder::BoolEncoder;
+use super::intra_pred::{predict_16x16, predict_8x8, Intra16Mode, IntraChromaMode};
+use super::loop_filter::{filter_horizontal_edge_16, filter_vertical_edge_16};
+use super::prob_tables::{COEFF_BANDS, DEFAULT_COEFF_PROBS};
+use super::quant::Quantizer;
+use super::simd::{sad_16x16, sad_8x8};
+use super::tables::{KF_Y_MODE_PROBS, KF_Y_MODE_TREE, UV_MODE_PROBS, UV_MODE_TREE, ZIGZAG};
+use super::transform::{fdct_4x4, idct_add_4x4, iwht_4x4, wht_4x4};
 use crate::color::Yuv420Planar;
 
 /// Encodes a full YUV420 planar frame into an RFC 6386 VP8 keyframe bitstream.
@@ -54,6 +52,9 @@ pub fn encode_frame(planar: &Yuv420Planar, quant: &Quantizer) -> Vec<u8> {
     // Refresh golden & alt-ref frames (1 = refresh all for keyframe)
     part0.put_bit(false); // Update prob tables (0 = use defaults)
 
+    // mb_no_coeff_skip (0 = false, macroblocks do not send skip flag)
+    part0.put_bit(false);
+
     // Macroblock context for adaptive token probabilities
     let mut above_nonzero_y = vec![[false; 4]; mb_cols];
     let mut above_nonzero_u = vec![[false; 2]; mb_cols];
@@ -71,15 +72,17 @@ pub fn encode_frame(planar: &Yuv420Planar, quant: &Quantizer) -> Vec<u8> {
         let mut left_nonzero_v = [false; 2];
 
         for mb_x in 0..mb_cols {
-            // Encode macroblock skip flag (0 = do not skip)
-            part0.put_bool(false, 128);
-
             // 1. Evaluate 16x16 Luma Intra-Prediction Mode (Rate-Distortion SAD via SIMD)
-            let best_y_mode =
-                select_best_16x16_y_mode(&planar.y, planar.y_stride, &recon_y, mb_x, mb_y);
+            let best_y_mode = select_best_16x16_y_mode(
+                &planar.y,
+                planar.y_stride,
+                &recon_y,
+                mb_x,
+                mb_y,
+            );
 
             // Encode Y mode into Partition 0
-            part0.put_tree(&KF_Y_MODE_TREE, &KF_Y_MODE_PROBS, best_y_mode as usize);
+            encode_kf_y_mode(&mut part0, best_y_mode);
 
             // 2. Evaluate 8x8 Chroma Intra-Prediction Mode
             let best_uv_mode = select_best_8x8_uv_mode(
@@ -93,7 +96,7 @@ pub fn encode_frame(planar: &Yuv420Planar, quant: &Quantizer) -> Vec<u8> {
             );
 
             // Encode UV mode into Partition 0
-            part0.put_tree(&UV_MODE_TREE, &UV_MODE_PROBS, best_uv_mode as usize);
+            encode_uv_mode(&mut part0, best_uv_mode);
 
             // 3. Transform, Quantize, and Encode Luma 16x16 Block
             encode_luma_16x16(
@@ -141,24 +144,10 @@ pub fn encode_frame(planar: &Yuv420Planar, quant: &Quantizer) -> Vec<u8> {
                 let limit = (filter_level as i32) * 2;
                 let thresh = filter_level as i32;
                 if mb_x > 0 {
-                    filter_vertical_edge_16(
-                        &mut recon_y,
-                        planar.y_stride,
-                        mb_x * 16,
-                        mb_y * 16,
-                        limit,
-                        thresh,
-                    );
+                    filter_vertical_edge_16(&mut recon_y, planar.y_stride, mb_x * 16, mb_y * 16, limit, thresh);
                 }
                 if mb_y > 0 {
-                    filter_horizontal_edge_16(
-                        &mut recon_y,
-                        planar.y_stride,
-                        mb_x * 16,
-                        mb_y * 16,
-                        limit,
-                        thresh,
-                    );
+                    filter_horizontal_edge_16(&mut recon_y, planar.y_stride, mb_x * 16, mb_y * 16, limit, thresh);
                 }
             }
         }
@@ -231,7 +220,12 @@ fn select_best_16x16_y_mode(
         None
     };
 
-    let modes = [Intra16Mode::DC, Intra16Mode::V, Intra16Mode::H, Intra16Mode::TM];
+    let modes = [
+        Intra16Mode::DC,
+        Intra16Mode::V,
+        Intra16Mode::H,
+        Intra16Mode::TM,
+    ];
 
     let mut best_mode = Intra16Mode::DC;
     let mut best_sad = u32::MAX;
@@ -298,7 +292,12 @@ fn select_best_8x8_uv_mode(
         None
     };
 
-    let modes = [IntraChromaMode::DC, IntraChromaMode::V, IntraChromaMode::H, IntraChromaMode::TM];
+    let modes = [
+        IntraChromaMode::DC,
+        IntraChromaMode::V,
+        IntraChromaMode::H,
+        IntraChromaMode::TM,
+    ];
 
     let mut best_mode = IntraChromaMode::DC;
     let mut best_sad = u32::MAX;
@@ -375,8 +374,7 @@ fn encode_luma_16x16(
                 let orig_row = (mb_y * 16 + by * 4 + y) * stride + (mb_x * 16 + bx * 4);
                 let pred_row = (by * 4 + y) * 16 + (bx * 4);
                 for x in 0..4 {
-                    diff[y * 4 + x] =
-                        (orig[orig_row + x] as i16) - (pred_block[pred_row + x] as i16);
+                    diff[y * 4 + x] = (orig[orig_row + x] as i16) - (pred_block[pred_row + x] as i16);
                 }
             }
 
@@ -494,8 +492,7 @@ fn encode_chroma_8x8(
                 let orig_row = (mb_y * 8 + by * 4 + y) * stride + (mb_x * 8 + bx * 4);
                 let pred_row = (by * 4 + y) * 8 + (bx * 4);
                 for x in 0..4 {
-                    diff[y * 4 + x] =
-                        (orig[orig_row + x] as i16) - (pred_block[pred_row + x] as i16);
+                    diff[y * 4 + x] = (orig[orig_row + x] as i16) - (pred_block[pred_row + x] as i16);
                 }
             }
 
@@ -532,7 +529,60 @@ fn encode_chroma_8x8(
     }
 }
 
-/// Encodes quantized DCT coefficients into VP8 token bitstream.
+#[inline(always)]
+fn encode_kf_y_mode(part0: &mut BoolEncoder, mode: Intra16Mode) {
+    match mode {
+        Intra16Mode::DC => {
+            part0.put_bool(false, 145);
+        }
+        Intra16Mode::V => {
+            part0.put_bool(true, 145);
+            part0.put_bool(false, 156);
+        }
+        Intra16Mode::H => {
+            part0.put_bool(true, 145);
+            part0.put_bool(true, 156);
+            part0.put_bool(false, 163);
+        }
+        Intra16Mode::TM => {
+            part0.put_bool(true, 145);
+            part0.put_bool(true, 156);
+            part0.put_bool(true, 163);
+        }
+    }
+}
+
+#[inline(always)]
+fn encode_uv_mode(part0: &mut BoolEncoder, mode: IntraChromaMode) {
+    match mode {
+        IntraChromaMode::DC => {
+            part0.put_bool(false, 142);
+        }
+        IntraChromaMode::V => {
+            part0.put_bool(true, 142);
+            part0.put_bool(false, 114);
+        }
+        IntraChromaMode::H => {
+            part0.put_bool(true, 142);
+            part0.put_bool(true, 114);
+            part0.put_bool(false, 183);
+        }
+        IntraChromaMode::TM => {
+            part0.put_bool(true, 142);
+            part0.put_bool(true, 114);
+            part0.put_bool(true, 183);
+        }
+    }
+}
+
+const CAT1_PROBS: [u8; 1] = [159];
+const CAT2_PROBS: [u8; 2] = [165, 145];
+const CAT3_PROBS: [u8; 3] = [173, 148, 140];
+const CAT4_PROBS: [u8; 4] = [176, 155, 140, 135];
+const CAT5_PROBS: [u8; 5] = [180, 157, 141, 134, 130];
+const CAT6_PROBS: [u8; 11] = [254, 254, 243, 230, 196, 177, 153, 140, 133, 130, 129];
+
+/// Encodes quantized DCT coefficients into VP8 token bitstream conforming to RFC 6386 Section 13.
 fn encode_dct_block(
     part1: &mut BoolEncoder,
     coeffs: &[i16; 16],
@@ -540,84 +590,139 @@ fn encode_dct_block(
     context: usize,
     first_coeff: usize,
 ) -> bool {
-    let mut has_coeffs = false;
-
-    for i in first_coeff..16 {
-        let val = coeffs[ZIGZAG[i]];
-        if val != 0 {
-            has_coeffs = true;
+    let mut last_non_zero: Option<usize> = None;
+    for i in (first_coeff..16).rev() {
+        if coeffs[ZIGZAG[i]] != 0 {
+            last_non_zero = Some(i);
             break;
         }
     }
 
-    if !has_coeffs {
-        // Encode EOB (End of Block token)
+    let Some(last_idx) = last_non_zero else {
+        // Encode EOB token at start
         let band = COEFF_BANDS[first_coeff];
         let prob = DEFAULT_COEFF_PROBS[plane_type][band][context][0];
         part1.put_bool(false, prob);
         return false;
-    }
+    };
 
     let mut current_ctx = context;
-    for i in first_coeff..16 {
+    for i in first_coeff..=last_idx {
         let val = coeffs[ZIGZAG[i]];
         let band = COEFF_BANDS[i];
+        let probs = &DEFAULT_COEFF_PROBS[plane_type][band][current_ctx];
 
         if val == 0 {
-            // Encode zero token
-            let p0 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][0];
-            let p1 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][1];
-            part1.put_bool(true, p0);
-            part1.put_bool(false, p1);
+            // Token 1: DCT_0
+            part1.put_bool(true, probs[0]);
+            part1.put_bool(false, probs[1]);
             current_ctx = 0;
         } else {
-            // Encode non-zero token
-            let p0 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][0];
-            let p1 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][1];
-            part1.put_bool(true, p0);
-            part1.put_bool(true, p1);
-
             let abs_val = val.unsigned_abs() as u32;
             let sign = val < 0;
 
+            // Token is not EOB (0) and not DCT_0 (1)
+            part1.put_bool(true, probs[0]);
+            part1.put_bool(true, probs[1]);
+
             if abs_val == 1 {
-                let p2 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][2];
-                part1.put_bool(false, p2);
+                // Token 2: DCT_1
+                part1.put_bool(false, probs[2]);
                 part1.put_bit(sign);
                 current_ctx = 1;
             } else {
-                let p2 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][2];
-                part1.put_bool(true, p2);
+                part1.put_bool(true, probs[2]);
 
                 if abs_val <= 4 {
-                    let p3 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][3];
-                    part1.put_bool(false, p3);
+                    part1.put_bool(false, probs[3]);
                     if abs_val == 2 {
-                        let p4 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][4];
-                        part1.put_bool(false, p4);
+                        // Token 3: DCT_2
+                        part1.put_bool(false, probs[4]);
                     } else if abs_val == 3 {
-                        let p4 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][4];
-                        let p5 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][5];
-                        part1.put_bool(true, p4);
-                        part1.put_bool(false, p5);
+                        // Token 4: DCT_3
+                        part1.put_bool(true, probs[4]);
+                        part1.put_bool(false, probs[5]);
                     } else {
-                        let p4 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][4];
-                        let p5 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][5];
-                        part1.put_bool(true, p4);
-                        part1.put_bool(true, p5);
+                        // Token 5: DCT_4
+                        part1.put_bool(true, probs[4]);
+                        part1.put_bool(true, probs[5]);
                     }
                 } else {
-                    let p3 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][3];
-                    part1.put_bool(true, p3);
-                    // Standard magnitude encoding for VP8 Cat 1-6
-                    let extra = (abs_val - 5).min(2047);
-                    part1.put_uint(extra, 11);
+                    part1.put_bool(true, probs[3]);
+
+                    if abs_val <= 6 {
+                        // Token 6: DCT_CAT1 (val 5..6)
+                        part1.put_bool(false, probs[6]);
+                        let offset = (abs_val - 5) as usize;
+                        part1.put_bool(offset != 0, CAT1_PROBS[0]);
+                    } else {
+                        part1.put_bool(true, probs[6]);
+
+                        if abs_val <= 10 {
+                            // Token 7: DCT_CAT2 (val 7..10)
+                            part1.put_bool(false, probs[7]);
+                            let offset = (abs_val - 7) as usize;
+                            part1.put_bool(((offset >> 1) & 1) != 0, CAT2_PROBS[0]);
+                            part1.put_bool((offset & 1) != 0, CAT2_PROBS[1]);
+                        } else {
+                            part1.put_bool(true, probs[7]);
+
+                            if abs_val <= 18 {
+                                // Token 8: DCT_CAT3 (val 11..18)
+                                part1.put_bool(false, probs[8]);
+                                let offset = (abs_val - 11) as usize;
+                                part1.put_bool(((offset >> 2) & 1) != 0, CAT3_PROBS[0]);
+                                part1.put_bool(((offset >> 1) & 1) != 0, CAT3_PROBS[1]);
+                                part1.put_bool((offset & 1) != 0, CAT3_PROBS[2]);
+                            } else {
+                                part1.put_bool(true, probs[8]);
+
+                                if abs_val <= 34 {
+                                    // Token 9: DCT_CAT4 (val 19..34)
+                                    part1.put_bool(false, probs[9]);
+                                    let offset = (abs_val - 19) as usize;
+                                    part1.put_bool(((offset >> 3) & 1) != 0, CAT4_PROBS[0]);
+                                    part1.put_bool(((offset >> 2) & 1) != 0, CAT4_PROBS[1]);
+                                    part1.put_bool(((offset >> 1) & 1) != 0, CAT4_PROBS[2]);
+                                    part1.put_bool((offset & 1) != 0, CAT4_PROBS[3]);
+                                } else {
+                                    part1.put_bool(true, probs[9]);
+
+                                    if abs_val <= 66 {
+                                        // Token 10: DCT_CAT5 (val 35..66)
+                                        part1.put_bool(false, probs[10]);
+                                        let offset = (abs_val - 35) as usize;
+                                        part1.put_bool(((offset >> 4) & 1) != 0, CAT5_PROBS[0]);
+                                        part1.put_bool(((offset >> 3) & 1) != 0, CAT5_PROBS[1]);
+                                        part1.put_bool(((offset >> 2) & 1) != 0, CAT5_PROBS[2]);
+                                        part1.put_bool(((offset >> 1) & 1) != 0, CAT5_PROBS[3]);
+                                        part1.put_bool((offset & 1) != 0, CAT5_PROBS[4]);
+                                    } else {
+                                        // Token 11: DCT_CAT6 (val 67..2048)
+                                        part1.put_bool(true, probs[10]);
+                                        let offset = ((abs_val - 67).min(2047)) as usize;
+                                        for bit_idx in (0..11).rev() {
+                                            let prob = CAT6_PROBS[10 - bit_idx];
+                                            part1.put_bool(((offset >> bit_idx) & 1) != 0, prob);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 part1.put_bit(sign);
                 current_ctx = 2;
             }
         }
+    }
+
+    // Emit EOB if block has trailing zeros up to position 15
+    if last_idx < 15 {
+        let band = COEFF_BANDS[last_idx + 1];
+        let p0 = DEFAULT_COEFF_PROBS[plane_type][band][current_ctx][0];
+        part1.put_bool(false, p0);
     }
 
     true
