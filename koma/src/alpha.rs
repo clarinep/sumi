@@ -48,8 +48,7 @@ impl AlphaEncoder {
                     *dst = *src; // Preserve exact fully transparent & opaque boundaries
                 } else {
                     let half = step / 2;
-                    let val =
-                        ((*src as u32 + half as u32) / step as u32 * step as u32).min(255) as u8;
+                    let val = ((*src as u32 + half as u32) / step as u32 * step as u32).min(255) as u8;
                     *dst = val;
                 }
             }
@@ -59,40 +58,27 @@ impl AlphaEncoder {
             alpha
         };
 
-        let (chosen_filter, filtered_data) = match alpha_filter {
-            AlphaFilter::None => {
-                let (_, buf) =
-                    Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::None);
-                (AlphaFilterMethod::None, buf)
-            }
-            AlphaFilter::Horizontal => {
-                let (_, buf) =
-                    Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Horizontal);
-                (AlphaFilterMethod::Horizontal, buf)
-            }
-            AlphaFilter::Vertical => {
-                let (_, buf) =
-                    Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Vertical);
-                (AlphaFilterMethod::Vertical, buf)
-            }
-            AlphaFilter::Gradient => {
-                let (_, buf) =
-                    Self::apply_filter(alpha_slice, width, height, AlphaFilterMethod::Gradient);
-                (AlphaFilterMethod::Gradient, buf)
-            }
-            AlphaFilter::Auto => Self::select_best_filter(alpha_slice, width, height),
-        };
+        // WebP ALPH chunk specification (RFC / libwebp alpha_dec.c):
+        // Header Byte layout:
+        // - Bits 0-1: Compression method (0 = No compression / uncompressed raw, 1 = Lossless)
+        // - Bits 2-3: Filter method (0 = None, 1 = Horizontal, 2 = Vertical, 3 = Gradient)
+        // - Bits 4-5: Pre-processing (0 = None, 1 = Level reduction)
+        // - Bits 6-7: Reserved (must be 0)
+        //
+        // NOTE: For uncompressed raw alpha (compression = 0), spatial delta filtering (methods 1..3)
+        // must NOT be used because standard decoders (Chromium, Safari, Firefox, libwebp)
+        // treat spatial filter deltas as uncompressed raw alpha values if lossless compression
+        // is not active, which results in transparent/corrupted frames. We strictly use FilterMethod::None (0).
+        let chosen_filter = AlphaFilterMethod::None;
+        let compression_method = 0u8; // 0 = No compression
+        let pre_processing = 0u8; // 0 = None
+        let filter_method = (chosen_filter as u8) & 0x03;
 
-        // Header byte:
-        // Bits 0-1: Preprocessing (0 = None)
-        // Bits 2-3: Filtering Method
-        // Bits 4-5: Compression (0 = Uncompressed raw stream)
-        // Bits 6-7: Reserved (0)
-        let header_byte = ((chosen_filter as u8) & 0x03) << 2;
+        let header_byte = compression_method | (filter_method << 2) | (pre_processing << 4);
 
-        let mut output = Vec::with_capacity(1 + filtered_data.len());
+        let mut output = Vec::with_capacity(1 + alpha_slice.len());
         output.push(header_byte);
-        output.extend_from_slice(&filtered_data);
+        output.extend_from_slice(alpha_slice);
         output
     }
 
@@ -148,9 +134,16 @@ impl AlphaEncoder {
                 } else {
                     0
                 };
-                let top = if y > 0 { alpha[prev_row_idx + x] as i32 } else { left };
-                let top_left =
-                    if x > 0 && y > 0 { alpha[prev_row_idx + x - 1] as i32 } else { top };
+                let top = if y > 0 {
+                    alpha[prev_row_idx + x] as i32
+                } else {
+                    left
+                };
+                let top_left = if x > 0 && y > 0 {
+                    alpha[prev_row_idx + x - 1] as i32
+                } else {
+                    top
+                };
 
                 let pred = match method {
                     AlphaFilterMethod::None => 0,
