@@ -531,23 +531,31 @@ fn encode_chroma_8x8(
 
 #[inline(always)]
 fn encode_kf_y_mode(part0: &mut BoolEncoder, mode: Intra16Mode) {
+    // kf_ymode_tree (RFC 6386 Section 11.2):
+    // Node 0 (prob 145): bit 0 -> B_PRED, bit 1 -> Node 1
+    // Node 1 (prob 156): bit 0 -> Node 2 (DC/V), bit 1 -> Node 3 (H/TM)
+    // Node 2 (prob 163): bit 0 -> DC_PRED, bit 1 -> V_PRED
+    // Node 3 (prob 128): bit 0 -> H_PRED, bit 1 -> TM_PRED
     match mode {
         Intra16Mode::DC => {
-            part0.put_bool(false, 145);
+            part0.put_bool(true, 145);
+            part0.put_bool(false, 156);
+            part0.put_bool(false, 163);
         }
         Intra16Mode::V => {
             part0.put_bool(true, 145);
             part0.put_bool(false, 156);
+            part0.put_bool(true, 163);
         }
         Intra16Mode::H => {
             part0.put_bool(true, 145);
             part0.put_bool(true, 156);
-            part0.put_bool(false, 163);
+            part0.put_bool(false, 128);
         }
         Intra16Mode::TM => {
             part0.put_bool(true, 145);
             part0.put_bool(true, 156);
-            part0.put_bool(true, 163);
+            part0.put_bool(true, 128);
         }
     }
 }
