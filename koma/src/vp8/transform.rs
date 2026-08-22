@@ -120,59 +120,80 @@ pub fn idct_add_4x4(coeffs: &[i16; 16], dst: &mut [u8], stride: usize) {
 }
 
 /// 4x4 Walsh-Hadamard Transform (WHT) for 16 Luma DC coefficients in 16x16 macroblocks.
+/// Follows RFC 6386 Section 14.3 / libvpx vp8_short_walsh4x4.
 pub fn wht_4x4(src: &[i16; 16], dst: &mut [i16; 16]) {
     let mut tmp = [0i32; 16];
 
+    // Horizontal / row pass
     for i in 0..4 {
-        let a0 = (src[i * 4 + 0] as i32) + (src[i * 4 + 2] as i32);
-        let a1 = (src[i * 4 + 1] as i32) + (src[i * 4 + 3] as i32);
-        let a2 = (src[i * 4 + 1] as i32) - (src[i * 4 + 3] as i32);
-        let a3 = (src[i * 4 + 0] as i32) - (src[i * 4 + 2] as i32);
+        let a1 = (src[i * 4 + 0] as i32) + (src[i * 4 + 3] as i32);
+        let b1 = (src[i * 4 + 1] as i32) + (src[i * 4 + 2] as i32);
+        let c1 = (src[i * 4 + 1] as i32) - (src[i * 4 + 2] as i32);
+        let d1 = (src[i * 4 + 0] as i32) - (src[i * 4 + 3] as i32);
 
-        tmp[0 * 4 + i] = a0 + a1;
-        tmp[1 * 4 + i] = a3 + a2;
-        tmp[2 * 4 + i] = a0 - a1;
-        tmp[3 * 4 + i] = a3 - a2;
+        let a2 = a1 + b1;
+        let b2 = c1 + d1;
+        let c2 = a1 - b1;
+        let d2 = d1 - c1;
+
+        tmp[0 * 4 + i] = a2 * 2;
+        tmp[1 * 4 + i] = b2 * 2;
+        tmp[2 * 4 + i] = c2 * 2;
+        tmp[3 * 4 + i] = d2 * 2;
     }
 
+    // Vertical / column pass
     for i in 0..4 {
-        let b0 = tmp[i * 4 + 0] + tmp[i * 4 + 2];
-        let b1 = tmp[i * 4 + 1] + tmp[i * 4 + 3];
-        let b2 = tmp[i * 4 + 1] - tmp[i * 4 + 3];
-        let b3 = tmp[i * 4 + 0] - tmp[i * 4 + 2];
+        let a1 = tmp[i * 4 + 0] + tmp[i * 4 + 3];
+        let b1 = tmp[i * 4 + 1] + tmp[i * 4 + 2];
+        let c1 = tmp[i * 4 + 1] - tmp[i * 4 + 2];
+        let d1 = tmp[i * 4 + 0] - tmp[i * 4 + 3];
 
-        dst[i * 4 + 0] = ((b0 + b1 + 3) >> 3) as i16;
-        dst[i * 4 + 1] = ((b3 + b2 + 3) >> 3) as i16;
-        dst[i * 4 + 2] = ((b0 - b1 + 3) >> 3) as i16;
-        dst[i * 4 + 3] = ((b3 - b2 + 3) >> 3) as i16;
+        let a2 = a1 + b1;
+        let b2 = c1 + d1;
+        let c2 = a1 - b1;
+        let d2 = d1 - c1;
+
+        dst[i * 4 + 0] = ((a2 + 7) >> 3) as i16;
+        dst[i * 4 + 1] = ((b2 + 7) >> 3) as i16;
+        dst[i * 4 + 2] = ((c2 + 7) >> 3) as i16;
+        dst[i * 4 + 3] = ((d2 + 7) >> 3) as i16;
     }
 }
 
 /// 4x4 Inverse Walsh-Hadamard Transform (IWHT).
+/// Conforms bit-exactly to RFC 6386 Section 14.3 (vp8_short_inv_walsh4x4_c).
 pub fn iwht_4x4(src: &[i16; 16], dst: &mut [i16; 16]) {
     let mut tmp = [0i32; 16];
 
+    // Column pass
     for i in 0..4 {
-        let a0 = (src[i * 4 + 0] as i32) + (src[i * 4 + 2] as i32);
-        let a1 = (src[i * 4 + 1] as i32) + (src[i * 4 + 3] as i32);
-        let a2 = (src[i * 4 + 1] as i32) - (src[i * 4 + 3] as i32);
-        let a3 = (src[i * 4 + 0] as i32) - (src[i * 4 + 2] as i32);
+        let a1 = (src[i + 0] as i32) + (src[i + 12] as i32);
+        let b1 = (src[i + 4] as i32) + (src[i + 8] as i32);
+        let c1 = (src[i + 4] as i32) - (src[i + 8] as i32);
+        let d1 = (src[i + 0] as i32) - (src[i + 12] as i32);
 
-        tmp[0 * 4 + i] = a0 + a1;
-        tmp[1 * 4 + i] = a3 + a2;
-        tmp[2 * 4 + i] = a0 - a1;
-        tmp[3 * 4 + i] = a3 - a2;
+        tmp[i + 0] = a1 + b1;
+        tmp[i + 4] = c1 + d1;
+        tmp[i + 8] = a1 - b1;
+        tmp[i + 12] = d1 - c1;
     }
 
+    // Row pass
     for i in 0..4 {
-        let b0 = tmp[i * 4 + 0] + tmp[i * 4 + 2];
-        let b1 = tmp[i * 4 + 1] + tmp[i * 4 + 3];
-        let b2 = tmp[i * 4 + 1] - tmp[i * 4 + 3];
-        let b3 = tmp[i * 4 + 0] - tmp[i * 4 + 2];
+        let a1 = tmp[i * 4 + 0] + tmp[i * 4 + 3];
+        let b1 = tmp[i * 4 + 1] + tmp[i * 4 + 2];
+        let c1 = tmp[i * 4 + 1] - tmp[i * 4 + 2];
+        let d1 = tmp[i * 4 + 0] - tmp[i * 4 + 3];
 
-        dst[i * 4 + 0] = ((b0 + b1 + 3) >> 3) as i16;
-        dst[i * 4 + 1] = ((b3 + b2 + 3) >> 3) as i16;
-        dst[i * 4 + 2] = ((b0 - b1 + 3) >> 3) as i16;
-        dst[i * 4 + 3] = ((b3 - b2 + 3) >> 3) as i16;
+        let a2 = a1 + b1;
+        let b2 = c1 + d1;
+        let c2 = a1 - b1;
+        let d2 = d1 - c1;
+
+        dst[i * 4 + 0] = ((a2 + 3) >> 3) as i16;
+        dst[i * 4 + 1] = ((b2 + 3) >> 3) as i16;
+        dst[i * 4 + 2] = ((c2 + 3) >> 3) as i16;
+        dst[i * 4 + 3] = ((d2 + 3) >> 3) as i16;
     }
 }
