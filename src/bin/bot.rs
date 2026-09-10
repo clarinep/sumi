@@ -116,23 +116,22 @@ async fn drop(
     #[autocomplete = "autocomplete_card"]
     #[description = "slot 1 card identifier"]
     right: Option<String>,
-    #[description = "number of drops to generate (1-10 max files per message)"]
+    #[description = "number of drops to generate (1-10 max files)"]
     amount: Option<u32>,
-    #[description = "WebP encoder quality 1-100 (default 85)"]
+    #[description = "webpx encoder qual 1-100 (default 85)"]
     quality: Option<u32>,
 ) -> Result<(), Error> {
     let cards = &ctx.data().cards;
     if cards.is_empty() {
         ctx.send(
             poise::CreateReply::default()
-                .content("```ansi\n\x1b[1;31m✖ No .webp card assets found in assets/ directory\x1b[0m\n```")
+                .content("```ansi\n\x1b[1;31m✖ no .webp card assets found in assets/ directory\x1b[0m\n```")
                 .ephemeral(true),
         )
         .await?;
         return Ok(());
     }
 
-    // Discord allows a maximum of 10 attachments per message
     let count = amount.unwrap_or(1).clamp(1, 10);
     let mut attachments = Vec::with_capacity(count as usize);
     let mut total_render_time = Duration::ZERO;
@@ -258,14 +257,10 @@ async fn stats(ctx: Context<'_>) -> Result<(), Error> {
     let cards_count = ctx.data().cards.len();
 
     let text = format!(
-        "```ansi\n\
-\x1b[1;36mSUMI ENGINE STATS\x1b[0m\n\
-\n\
+        "```ansi
 \x1b[0;32m  Uptime        \x1b[0m : \x1b[1;37m{uptime_fmt}\x1b[0m\n\
 \x1b[0;32m  Indexed Cards \x1b[0m : \x1b[1;37m{cards_count} cards\x1b[0m \x1b[0;30m(in-memory cache)\x1b[0m\n\
 \x1b[0;32m  Gateway Ping  \x1b[0m : \x1b[1;37m{ping_fmt}\x1b[0m\n\
-\n\
-\x1b[0;34m  Rendering Performance\x1b[0m\n\
 \x1b[0;35m  Total Renders \x1b[0m : \x1b[1;37m{successful}\x1b[0m \x1b[0;30m({success_rate:.1}% success, {failed} failed)\x1b[0m\n\
 \x1b[0;35m  Average Speed \x1b[0m : \x1b[1;37m{avg_render_ms:.2} ms\x1b[0m \x1b[0;30mper drop composite\x1b[0m\n\
 \x1b[0;35m  Throughput    \x1b[0m : \x1b[1;37m{throughput_rps:.2} drops/sec\x1b[0m\n\
