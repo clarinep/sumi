@@ -100,9 +100,6 @@ async fn drop(
     #[description = "number of drops to generate (1-10)"]
     amount: Option<u32>,
 ) -> Result<(), Error> {
-    let t0 = Instant::now();
-    ctx.defer().await?;
-
     let cards = &ctx.data().cards;
     if cards.is_empty() {
         ctx.send(
@@ -175,40 +172,26 @@ async fn drop(
 
     let render_fmt = format_duration(total_render_time);
     let size_kb = total_bytes as f64 / 1024.0;
+    let ping = ctx.ping().await;
+    let ping_fmt = format_duration(ping);
 
-    let initial_msg = if count == 1 {
+    let msg = if count == 1 {
         format!(
-            "```ansi\n\x1b[1;34mRender:\x1b[0m \x1b[1;32m{render_fmt}\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;35mRoundtrip:\x1b[0m \x1b[1;33m...\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
+            "```ansi\n\x1b[0;34mRender:\x1b[0m \x1b[1;37m{render_fmt}\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;35mPing:\x1b[0m \x1b[1;37m{ping_fmt}\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
         )
     } else {
         let avg_fmt = format_duration(total_render_time / count);
         format!(
-            "```ansi\n\x1b[1;36mDrops:\x1b[0m \x1b[1;37m{count}x\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;34mRender:\x1b[0m \x1b[1;32m{render_fmt}\x1b[0m \x1b[1;30m(avg {avg_fmt})\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;35mRoundtrip:\x1b[0m \x1b[1;33m...\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
+            "```ansi\n\x1b[0;36mDrops:\x1b[0m \x1b[1;37m{count}x\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;34mRender:\x1b[0m \x1b[1;37m{render_fmt}\x1b[0m \x1b[0;30m(avg {avg_fmt})\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;35mPing:\x1b[0m \x1b[1;37m{ping_fmt}\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
         )
     };
 
-    let mut reply_builder = poise::CreateReply::default().content(initial_msg);
+    let mut reply_builder = poise::CreateReply::default().content(msg);
     for att in attachments {
         reply_builder = reply_builder.attachment(att);
     }
 
-    let reply = ctx.send(reply_builder).await?;
-    let total_roundtrip = t0.elapsed();
-    let roundtrip_fmt = format_duration(total_roundtrip);
-
-    let final_msg = if count == 1 {
-        format!(
-            "```ansi\n\x1b[1;34mRender:\x1b[0m \x1b[1;32m{render_fmt}\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;35mRoundtrip:\x1b[0m \x1b[1;32m{roundtrip_fmt}\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
-        )
-    } else {
-        let avg_fmt = format_duration(total_render_time / count);
-        format!(
-            "```ansi\n\x1b[1;36mDrops:\x1b[0m \x1b[1;37m{count}x\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;34mRender:\x1b[0m \x1b[1;32m{render_fmt}\x1b[0m \x1b[1;30m(avg {avg_fmt})\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;35mRoundtrip:\x1b[0m \x1b[1;32m{roundtrip_fmt}\x1b[0m  \x1b[1;30m•\x1b[0m  \x1b[1;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
-        )
-    };
-
-    let _ = reply.edit(ctx, poise::CreateReply::default().content(final_msg)).await;
-
+    ctx.send(reply_builder).await?;
     Ok(())
 }
 
@@ -246,16 +229,18 @@ async fn stats(ctx: Context<'_>) -> Result<(), Error> {
 
     let text = format!(
         "```ansi\n\
-\x1b[1;32m  Uptime        \x1b[0m : \x1b[1;37m{uptime_fmt}\x1b[0m\n\
-\x1b[1;32m  Indexed Cards \x1b[0m : \x1b[1;37m{cards_count} cards\x1b[0m \x1b[1;30m(cache)\x1b[0m\n\
-\x1b[1;32m  Gateway Ping  \x1b[0m : \x1b[1;33m{ping_fmt}\x1b[0m\n\
+\x1b[1;36m\x1b[0m\n\
 \n\
-\x1b[1;34m  ─── Rendering Performance ────────────────────────────────\x1b[0m\n\
-\x1b[1;35m  Total Renders \x1b[0m : \x1b[1;37m{successful}\x1b[0m \x1b[1;30m({success_rate:.1}% success, {failed} failed)\x1b[0m\n\
-\x1b[1;35m  Average Speed \x1b[0m : \x1b[1;32m{avg_render_ms:.2} ms\x1b[0m \x1b[1;30mper drop composite\x1b[0m\n\
-\x1b[1;35m  Throughput    \x1b[0m : \x1b[1;36m{throughput_rps:.2} drops/sec\x1b[0m\n\
-\x1b[1;35m  Total Render  \x1b[0m : \x1b[1;37m{:.2} s\x1b[0m \x1b[1;30mcumulative CPU time\x1b[0m\n\
-\x1b[1;35m  Total Output  \x1b[0m : \x1b[1;37m{size_mb:.2} MB\x1b[0m \x1b[1;30mWebP payload\x1b[0m\n\
+\x1b[0;32m  Uptime        \x1b[0m : \x1b[1;37m{uptime_fmt}\x1b[0m\n\
+\x1b[0;32m  Indexed Cards \x1b[0m : \x1b[1;37m{cards_count} cards\x1b[0m \x1b[0;30m(in-memory cache)\x1b[0m\n\
+\x1b[0;32m  Gateway Ping  \x1b[0m : \x1b[1;37m{ping_fmt}\x1b[0m\n\
+\n\
+\x1b[0;34m  Rendering Performance\x1b[0m\n\
+\x1b[0;35m  Total Renders \x1b[0m : \x1b[1;37m{successful}\x1b[0m \x1b[0;30m({success_rate:.1}% success, {failed} failed)\x1b[0m\n\
+\x1b[0;35m  Average Speed \x1b[0m : \x1b[1;37m{avg_render_ms:.2} ms\x1b[0m \x1b[0;30mper drop composite\x1b[0m\n\
+\x1b[0;35m  Throughput    \x1b[0m : \x1b[1;37m{throughput_rps:.2} drops/sec\x1b[0m\n\
+\x1b[0;35m  Total Render  \x1b[0m : \x1b[1;37m{:.2} s\x1b[0m \x1b[0;30mcumulative CPU time\x1b[0m\n\
+\x1b[0;35m  Total Output  \x1b[0m : \x1b[1;37m{size_mb:.2} MB\x1b[0m \x1b[0;30mWebP payload\x1b[0m\n\
 ```",
         total_time_ms as f64 / 1000.0
     );
