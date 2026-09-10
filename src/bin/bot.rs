@@ -3,7 +3,7 @@ use std::{
     env, fs,
     path::Path,
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use mimalloc::MiMalloc;
@@ -20,6 +20,17 @@ pub struct Data {
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, Data, Error>;
+
+fn format_duration(d: Duration) -> String {
+    let us = d.as_micros();
+    if us < 1_000 {
+        format!("{us}µs")
+    } else if us < 1_000_000 {
+        format!("{:.2}ms", us as f64 / 1_000.0)
+    } else {
+        format!("{:.2}s", us as f64 / 1_000_000.0)
+    }
+}
 
 fn scan_card_names(dir: &str) -> Vec<String> {
     let mut names = Vec::new();
@@ -56,7 +67,7 @@ async fn autocomplete_card(
         .collect()
 }
 
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(slash_command, prefix_command, aliases("d"))]
 async fn drop(
     ctx: Context<'_>,
     #[autocomplete = "autocomplete_card"]
@@ -73,7 +84,7 @@ async fn drop(
     if cards.is_empty() {
         ctx.send(
             poise::CreateReply::default()
-                .content("```[sumi::err] no .webp card assets found in assets/```")
+                .content("*no .webp card assets found in assets/*")
                 .ephemeral(true),
         )
         .await?;
@@ -86,8 +97,16 @@ async fn drop(
     });
 
     let c2 = right.unwrap_or_else(|| {
-        let idx = fastrand::usize(..cards.len());
-        cards[idx].clone()
+        if cards.len() > 1 {
+            loop {
+                let idx = fastrand::usize(..cards.len());
+                if cards[idx] != c1 {
+                    break cards[idx].clone();
+                }
+            }
+        } else {
+            cards[0].clone()
+        }
     });
 
     let p1 = fastrand::u32(1..=9);
@@ -99,19 +118,22 @@ async fn drop(
         .renderer
         .render_drop(&c1, &c2, PrintNumber::new(p1), PrintNumber::new(p2))
         .await?;
-    let render_us = t_render.elapsed().as_micros();
+    let render_time = t_render.elapsed();
     let size_kb = bytes.len() as f64 / 1024.0;
-    let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let roundtrip = t0.elapsed();
+
+    let render_fmt = format_duration(render_time);
+    let roundtrip_fmt = format_duration(roundtrip);
 
     let attachment = serenity::CreateAttachment::bytes(Cow::Borrowed(&bytes[..]), "drop.webp");
 
     let text = format!(
-        "[sumi::drop]\nslot.0: {c1} (print: #{p1})\nslot.1: {c2} (print: #{p2})\nrender: {render_us}µs | size: {size_kb:.1}KB | roundtrip: {total_ms:.1}ms"
+        "`#{p1}`  |  `#{p2}`  •  `{render_fmt}` · `{size_kb:.1}KB` · `{roundtrip_fmt}`"
     );
 
     ctx.send(
         poise::CreateReply::default()
-            .content(format!("```{text}```"))
+            .content(text)
             .attachment(attachment),
     )
     .await?;
@@ -167,9 +189,12 @@ async fn main() -> Result<(), Error> {
         .setup(move |ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                ctx.set_activity(Some(serenity::ActivityData::custom(
-                    "soft testing in progress (*ᴗ͈ˬᴗ͈)ꕤ*.ﾟ",
-                )));
+                ctx.set_presence(
+                    Some(serenity::ActivityData::custom(
+                        "soft testing in progress (*ᴗ͈ˬᴗ͈)ꕤ*.ﾟ",
+                    )),
+                    serenity::OnlineStatus::Online,
+                );
                 println!("========================================");
                 println!("[sumi::ready] tag: {} | cards: {count}", _ready.user.tag());
                 println!("========================================");
