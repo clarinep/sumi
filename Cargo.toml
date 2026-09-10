@@ -1,18 +1,20 @@
 [package]
-  name    = "sumi"
-  version = "1.4.0"
-  edition = "2024"
+  name         = "sumi"
+  version      = "1.4.0"
+  edition      = "2024"
   rust-version = "1.87"
 
 [dependencies]
   ahash              = "0.8.12"
   axum               = { version = "0.8.9", features = ["http1", "json", "query", "tokio"], default-features = false }
   bytes              = { version = "1.12.1", default-features = false }
-  crossbeam-queue    = { version = "0.3.14", features = ["alloc"], default-features = false }
+  crossbeam-queue    = { version = "0.3.13", features = ["alloc"], default-features = false }
   dashmap            = "6.2.1"
+  fastrand           = "2.3.0"
   fontdue            = { version = "0.9.4", default-features = false }
   itoa               = "1.0.18"
   mimalloc           = "0.1.52"
+  poise              = "0.6.1"
   serde              = { version = "1.0.229", features = ["serde_derive"], default-features = false }
   serde_json         = "1.0.151"
   tokio              = { version = "1.53.1", features = ["fs", "rt-multi-thread", "signal"] }
@@ -20,12 +22,10 @@
   tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"], default-features = false }
   webpx              = { version = "0.4.0", features = ["decode", "encode"], default-features = false }
 
-[profile.release]
-  lto           = "fat"
-  opt-level     = 3
-  codegen-units = 1
-  panic         = "abort"
-  strip         = "symbols"  
+[[bin]]
+name = "sumi"
+path = "src/main.rs"
 
-[profile.dev]
-  debug = false
+[[bin]]
+name = "bot"
+path = "src/bin/bot.rs"
