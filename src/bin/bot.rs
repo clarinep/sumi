@@ -1,29 +1,58 @@
-use std::{borrow::Cow, env, sync::Arc, time::Instant};
+use std::{
+    borrow::Cow,
+    env, fs,
+    path::Path,
+    sync::Arc,
+    time::Instant,
+};
 
 use mimalloc::MiMalloc;
 use poise::serenity_prelude as serenity;
-use sumi::renderer::CardRenderer;
+use sumi::renderer::{CardRenderer, PrintNumber};
 
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
 struct Data {
     renderer: Arc<CardRenderer>,
+    cards: Arc<[String]>,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
+fn scan_card_names(dir: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    scan_dir(Path::new(dir), Path::new(dir), &mut names);
+    names
+}
+
+fn scan_dir(base: &Path, current: &Path, acc: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(current) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_dir(base, &path, acc);
+        } else if path.extension().is_some_and(|ext| ext == "webp") {
+            if let Ok(rel) = path.strip_prefix(base) {
+                let name = rel.with_extension("").to_string_lossy().replace('\\', "/");
+                acc.push(name);
+            }
+        }
+    }
+}
+
 async fn autocomplete_card<'a>(
     ctx: Context<'_>,
     partial: &'a str,
 ) -> impl Iterator<Item = String> + 'a {
-    let names = ctx.data().renderer.card_cache.card_names();
-    names
-        .into_iter()
-        .filter(move |name| name.to_lowercase().contains(&partial.to_lowercase()))
+    let partial = partial.to_lowercase();
+    ctx.data()
+        .cards
+        .iter()
+        .filter(move |name| name.to_lowercase().contains(&partial))
         .take(25)
-        .map(|name| name.to_string())
+        .cloned()
 }
 
 #[poise::command(slash_command, prefix_command)]
@@ -39,11 +68,35 @@ async fn drop(
     let t0 = Instant::now();
     ctx.defer().await?;
 
+    let cards = &ctx.data().cards;
+    if cards.is_empty() {
+        ctx.send(
+            poise::CreateReply::default()
+                .content("```[sumi::err] no .webp card assets found in assets/```")
+                .ephemeral(true),
+        )
+        .await?;
+        return Ok(());
+    }
+
+    let c1 = left.unwrap_or_else(|| {
+        let idx = fastrand::usize(..cards.len());
+        cards[idx].clone()
+    });
+
+    let c2 = right.unwrap_or_else(|| {
+        let idx = fastrand::usize(..cards.len());
+        cards[idx].clone()
+    });
+
+    let p1 = fastrand::u32(1..=9);
+    let p2 = fastrand::u32(1..=9);
+
     let t_render = Instant::now();
-    let (bytes, c1, c2, p1, p2) = ctx
+    let bytes = ctx
         .data()
         .renderer
-        .render_random_drop(left.as_deref(), right.as_deref())
+        .render_drop(&c1, &c2, PrintNumber::new(p1), PrintNumber::new(p2))
         .await?;
     let render_us = t_render.elapsed().as_micros();
     let size_kb = bytes.len() as f64 / 1024.0;
@@ -70,6 +123,10 @@ async fn main() -> Result<(), Error> {
     let token = env::var("DISCORD_TOKEN").expect("missing DISCORD_TOKEN env variable");
     let cards_dir = env::var("CARDS_DIR").unwrap_or_else(|_| "assets".to_string());
 
+    let card_names = scan_card_names(&cards_dir);
+    let count = card_names.len();
+    let cards: Arc<[String]> = card_names.into();
+
     let renderer = Arc::new(CardRenderer::new(&cards_dir)?);
     renderer.card_cache.start_prewarm();
 
@@ -89,12 +146,14 @@ async fn main() -> Result<(), Error> {
 
     let framework = poise::Framework::builder()
         .options(options)
-        .setup(|ctx, _ready, framework| {
+        .setup(move |ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                ctx.set_activity(Some(serenity::ActivityData::custom("soft testing in progress (*ᴗ͈ˬᴗ͈)ꕤ*.ﾟ")));
-                println!("sumi-bot online: {}", _ready.user.tag());
-                Ok(Data { renderer })
+                ctx.set_activity(Some(serenity::ActivityData::custom(
+                    "soft testing in progress (*ᴗ͈ˬᴗ͈)ꕤ*.ﾟ",
+                )));
+                println!("sumi-bot online: {} | {count} cards indexed", _ready.user.tag());
+                Ok(Data { renderer, cards })
             })
         })
         .build();
