@@ -18,10 +18,10 @@ jobs:
       - name: rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: run sumi-bot
+      - name: run bot
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CARDS_DIR: assets
           RUST_LOG: info
         run: |
-          cargo run --release --bin sumi-bot
+          cargo run --release --bin bot
