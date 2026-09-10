@@ -12,6 +12,7 @@ use sumi::{
     metrics::{ImageBytes, RenderDurationMs},
     renderer::{CardRenderer, PrintNumber},
 };
+use webpx::{AlphaFilter, EncoderConfig, ImageHint, Preset, Unstoppable};
 
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
@@ -88,6 +89,24 @@ async fn autocomplete_card(
         .collect()
 }
 
+fn encode_custom_quality(bytes: &[u8], quality: u32) -> Option<Vec<u8>> {
+    let (pixels, width, height) = webpx::decode_rgba(bytes).ok()?;
+    let config = EncoderConfig::new()
+        .preset(Preset::Picture)
+        .hint(ImageHint::Picture)
+        .quality((quality as f32).clamp(1.0, 100.0))
+        .method(0)
+        .alpha_compression(true)
+        .alpha_quality(85)
+        .alpha_filter(AlphaFilter::None)
+        .low_memory(false)
+        .pass(1)
+        .exact(false)
+        .segments(1);
+
+    config.encode_rgba(&pixels, width, height, Unstoppable).ok()
+}
+
 #[poise::command(slash_command, prefix_command, aliases("d"))]
 async fn drop(
     ctx: Context<'_>,
@@ -97,8 +116,10 @@ async fn drop(
     #[autocomplete = "autocomplete_card"]
     #[description = "slot 1 card identifier"]
     right: Option<String>,
-    #[description = "number of drops to generate (1-10)"]
+    #[description = "number of drops to generate (1-10 max files per message)"]
     amount: Option<u32>,
+    #[description = "WebP encoder quality 1-100 (default 85)"]
+    quality: Option<u32>,
 ) -> Result<(), Error> {
     let cards = &ctx.data().cards;
     if cards.is_empty() {
@@ -111,6 +132,7 @@ async fn drop(
         return Ok(());
     }
 
+    // Discord allows a maximum of 10 attachments per message
     let count = amount.unwrap_or(1).clamp(1, 10);
     let mut attachments = Vec::with_capacity(count as usize);
     let mut total_render_time = Duration::ZERO;
@@ -149,12 +171,22 @@ async fn drop(
             .renderer
             .render_drop(&c1, &c2, PrintNumber::new(p1), PrintNumber::new(p2))
             .await?;
+
+        let mut final_bytes = bytes.to_vec();
+        if let Some(q) = quality {
+            if (1..=100).contains(&q) && q != 85 {
+                if let Some(reencoded) = encode_custom_quality(&bytes, q) {
+                    final_bytes = reencoded;
+                }
+            }
+        }
+
         let render_time = t_render.elapsed();
         total_render_time += render_time;
-        total_bytes += bytes.len();
+        total_bytes += final_bytes.len();
 
         ctx.data().renderer.stats.record_success(
-            ImageBytes(bytes.len() as u64),
+            ImageBytes(final_bytes.len() as u64),
             RenderDurationMs(render_time.as_millis() as u64),
         );
 
@@ -165,24 +197,22 @@ async fn drop(
         };
 
         attachments.push(serenity::CreateAttachment::bytes(
-            Cow::Owned(bytes.to_vec()),
+            Cow::Owned(final_bytes),
             filename,
         ));
     }
 
     let render_fmt = format_duration(total_render_time);
     let size_kb = total_bytes as f64 / 1024.0;
-    let ping = ctx.ping().await;
-    let ping_fmt = format_duration(ping);
 
     let msg = if count == 1 {
         format!(
-            "```ansi\n\x1b[0;34mRender:\x1b[0m \x1b[1;37m{render_fmt}\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;35mPing:\x1b[0m \x1b[1;37m{ping_fmt}\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
+            "```ansi\n\x1b[0;34mRender:\x1b[0m \x1b[1;37m{render_fmt}\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
         )
     } else {
         let avg_fmt = format_duration(total_render_time / count);
         format!(
-            "```ansi\n\x1b[0;36mDrops:\x1b[0m \x1b[1;37m{count}x\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;34mRender:\x1b[0m \x1b[1;37m{render_fmt}\x1b[0m \x1b[0;30m(avg {avg_fmt})\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;35mPing:\x1b[0m \x1b[1;37m{ping_fmt}\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
+            "```ansi\n\x1b[0;36mDrops:\x1b[0m \x1b[1;37m{count}x\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;34mRender:\x1b[0m \x1b[1;37m{render_fmt}\x1b[0m \x1b[0;30m(avg {avg_fmt})\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
         )
     };
 
@@ -229,7 +259,7 @@ async fn stats(ctx: Context<'_>) -> Result<(), Error> {
 
     let text = format!(
         "```ansi\n\
-\x1b[1;36m\x1b[0m\n\
+\x1b[1;36mSUMI ENGINE STATS\x1b[0m\n\
 \n\
 \x1b[0;32m  Uptime        \x1b[0m : \x1b[1;37m{uptime_fmt}\x1b[0m\n\
 \x1b[0;32m  Indexed Cards \x1b[0m : \x1b[1;37m{cards_count} cards\x1b[0m \x1b[0;30m(in-memory cache)\x1b[0m\n\
@@ -333,4 +363,3 @@ async fn main() -> Result<(), Error> {
 
     Ok(())
 }
-
