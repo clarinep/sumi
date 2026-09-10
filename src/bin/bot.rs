@@ -116,22 +116,23 @@ async fn drop(
     #[autocomplete = "autocomplete_card"]
     #[description = "slot 1 card identifier"]
     right: Option<String>,
-    #[description = "number of drops to generate (1-10 max files)"]
+    #[description = "number of drops to generate (1-10 max files per message)"]
     amount: Option<u32>,
-    #[description = "webpx encoder qual 1-100 (default 85)"]
+    #[description = "WebP encoder quality 1-100 (default 85)"]
     quality: Option<u32>,
 ) -> Result<(), Error> {
     let cards = &ctx.data().cards;
     if cards.is_empty() {
         ctx.send(
             poise::CreateReply::default()
-                .content("```ansi\n\x1b[1;31m✖ no .webp card assets found in assets/ directory\x1b[0m\n```")
+                .content("```ansi\n\x1b[1;31m✖ No .webp card assets found in assets/ directory\x1b[0m\n```")
                 .ephemeral(true),
         )
         .await?;
         return Ok(());
     }
 
+    // Discord allows a maximum of 10 attachments per message
     let count = amount.unwrap_or(1).clamp(1, 10);
     let mut attachments = Vec::with_capacity(count as usize);
     let mut total_render_time = Duration::ZERO;
@@ -201,17 +202,19 @@ async fn drop(
         ));
     }
 
-    let render_fmt = format_duration(total_render_time);
+    let render_ms = total_render_time.as_micros() as f64 / 1000.0;
     let size_kb = total_bytes as f64 / 1024.0;
+
+    let emoji = "<:bibiFighting:1443694917065900232>";
 
     let msg = if count == 1 {
         format!(
-            "```ansi\n\x1b[0;34mRender:\x1b[0m \x1b[1;37m{render_fmt}\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
+            "> -# {emoji}  [render]: **{render_ms:.2}** ms · [size]: **{size_kb:.2}** kb {emoji}"
         )
     } else {
-        let avg_fmt = format_duration(total_render_time / count);
+        let avg_ms = render_ms / count as f64;
         format!(
-            "```ansi\n\x1b[0;36mDrops:\x1b[0m \x1b[1;37m{count}x\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;34mRender:\x1b[0m \x1b[1;37m{render_fmt}\x1b[0m \x1b[0;30m(avg {avg_fmt})\x1b[0m  \x1b[0;30m•\x1b[0m  \x1b[0;33mSize:\x1b[0m \x1b[1;37m{size_kb:.1} KB\x1b[0m\n```"
+            "> -# {emoji}  [drops]: **{count}x** · [render]: **{render_ms:.2}** ms (avg **{avg_ms:.2}** ms) · [size]: **{size_kb:.2}** kb {emoji}"
         )
     };
 
@@ -257,10 +260,14 @@ async fn stats(ctx: Context<'_>) -> Result<(), Error> {
     let cards_count = ctx.data().cards.len();
 
     let text = format!(
-        "```ansi
+        "```ansi\n\
+\x1b[1;36mSUMI ENGINE STATS\x1b[0m\n\
+\n\
 \x1b[0;32m  Uptime        \x1b[0m : \x1b[1;37m{uptime_fmt}\x1b[0m\n\
 \x1b[0;32m  Indexed Cards \x1b[0m : \x1b[1;37m{cards_count} cards\x1b[0m \x1b[0;30m(in-memory cache)\x1b[0m\n\
 \x1b[0;32m  Gateway Ping  \x1b[0m : \x1b[1;37m{ping_fmt}\x1b[0m\n\
+\n\
+\x1b[0;34m  Rendering Performance\x1b[0m\n\
 \x1b[0;35m  Total Renders \x1b[0m : \x1b[1;37m{successful}\x1b[0m \x1b[0;30m({success_rate:.1}% success, {failed} failed)\x1b[0m\n\
 \x1b[0;35m  Average Speed \x1b[0m : \x1b[1;37m{avg_render_ms:.2} ms\x1b[0m \x1b[0;30mper drop composite\x1b[0m\n\
 \x1b[0;35m  Throughput    \x1b[0m : \x1b[1;37m{throughput_rps:.2} drops/sec\x1b[0m\n\
@@ -358,3 +365,4 @@ async fn main() -> Result<(), Error> {
 
     Ok(())
 }
+
