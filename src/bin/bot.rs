@@ -42,17 +42,18 @@ fn scan_dir(base: &Path, current: &Path, acc: &mut Vec<String>) {
     }
 }
 
-async fn autocomplete_card<'a>(
+async fn autocomplete_card(
     ctx: Context<'_>,
-    partial: &'a str,
-) -> impl Iterator<Item = String> + 'a {
+    partial: &str,
+) -> Vec<String> {
     let partial = partial.to_lowercase();
     ctx.data()
         .cards
         .iter()
-        .filter(move |name| name.to_lowercase().contains(&partial))
+        .filter(|name| name.to_lowercase().contains(&partial))
         .take(25)
         .cloned()
+        .collect()
 }
 
 #[poise::command(slash_command, prefix_command)]
