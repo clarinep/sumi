@@ -7,8 +7,22 @@ jobs:
   bot:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
+    
     steps:
+      - name: Show Runner Specifications
+        run: |
+          echo "=== CPU SPECIFICATIONS ==="
+          lscpu
+          echo ""
+          echo "=== MEMORY (RAM) SPECIFICATIONS ==="
+          free -h
+          echo ""
+          echo "=== DISK SPACE ==="
+          df -h /
+          echo ""
+          echo "=== OS VERSION ==="
+          cat /etc/os-release
+
       - name: checkout repository
         uses: actions/checkout@v4
 
