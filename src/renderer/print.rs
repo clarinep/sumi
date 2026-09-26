@@ -27,6 +27,7 @@ struct Letter {
 struct LetterSet {
     hash: Letter,
     digits: [Letter; 10],
+    ref_width: i32,
 }
 
 static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
@@ -47,19 +48,15 @@ static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
         for &cov in &coverage {
             white_pass.push(GlyphPixel { fg_rgb: cov, fg_a: cov, inv_a: 255 - cov });
 
+            // Layer 1: Ambient diffusion shadow (~35% opacity) for soft optical depth
             let ambient_a = ((u32::from(cov) * 90) / 255) as u8;
-            ambient_shadow_pass.push(GlyphPixel {
-                fg_rgb: 0,
-                fg_a: ambient_a,
-                inv_a: 255 - ambient_a,
-            });
+            ambient_shadow_pass
+                .push(GlyphPixel { fg_rgb: 0, fg_a: ambient_a, inv_a: 255 - ambient_a });
 
+            // Layer 2: Crisp contact shadow (~75% opacity) for razor-sharp edge definition
             let contact_a = ((u32::from(cov) * 190) / 255) as u8;
-            contact_shadow_pass.push(GlyphPixel {
-                fg_rgb: 0,
-                fg_a: contact_a,
-                inv_a: 255 - contact_a,
-            });
+            contact_shadow_pass
+                .push(GlyphPixel { fg_rgb: 0, fg_a: contact_a, inv_a: 255 - contact_a });
         }
 
         Letter {
@@ -74,9 +71,14 @@ static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
         }
     };
 
+    let hash = render_char('#');
+    let digits = array::from_fn(|i| render_char((b'0' + i as u8) as char));
+    let ref_width = i32::from(hash.advance_width) + i32::from(digits[0].advance_width) * 2;
+
     LetterSet {
-        hash: render_char('#'),
-        digits: array::from_fn(|i| render_char((b'0' + i as u8) as char)),
+        hash,
+        digits,
+        ref_width,
     }
 });
 
@@ -84,18 +86,15 @@ pub(super) fn init_font() {
     LazyLock::force(&LETTERS);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PassKind {
-    AmbientShadow,
-    ContactShadow,
-    Foreground,
+#[inline]
+pub(super) fn ref_number_width() -> i32 {
+    LETTERS.ref_width
 }
 
 // !!! all as usize casts are safe from sign loss !!!
 // canvas_w and letter_w come from unsigned integers
 // canvas_row_idx is verified positive by the bounds check
 // letter_row_idx and letter_col_idx are positive offsets bounded by zero
-// this is same for draw_pass func
 #[allow(clippy::many_single_char_names, clippy::cast_sign_loss, clippy::similar_names)]
 pub(super) fn draw_print_number(
     canvas_width: u32,
@@ -104,35 +103,44 @@ pub(super) fn draw_print_number(
     print_number: &[u8],
     pos: Point<i32>,
 ) {
-    draw_pass(
+    // 1. Soft ambient diffusion shadow at (+2, +2) for natural optical depth
+    draw_shadow_pass(
         canvas_width,
         canvas_height,
         canvas_buf,
         print_number,
         Point::new(pos.x + 2, pos.y + 2),
-        PassKind::AmbientShadow,
+        true,
     );
 
-    draw_pass(
+    // 2. Crisp optical contact shadow at (+1, +1) for razor-sharp edge separation
+    draw_shadow_pass(
         canvas_width,
         canvas_height,
         canvas_buf,
         print_number,
         Point::new(pos.x + 1, pos.y + 1),
-        PassKind::ContactShadow,
+        false,
     );
 
-    draw_pass(canvas_width, canvas_height, canvas_buf, print_number, pos, PassKind::Foreground);
+    // 3. Crisp anti-aliased white glyph foreground at (0, 0)
+    draw_foreground_pass(
+        canvas_width,
+        canvas_height,
+        canvas_buf,
+        print_number,
+        pos,
+    );
 }
 
 #[allow(clippy::many_single_char_names, clippy::cast_sign_loss, clippy::similar_names)]
-fn draw_pass(
+fn draw_shadow_pass(
     canvas_width: u32,
     canvas_height: u32,
     canvas_buf: &mut [u8],
     print_number: &[u8],
     mut pos: Point<i32>,
-    pass_kind: PassKind,
+    is_ambient: bool,
 ) {
     let canvas_width = canvas_width.cast_signed();
     let canvas_height = canvas_height.cast_signed();
@@ -167,11 +175,13 @@ fn draw_pass(
             continue;
         }
 
-        let glyph_pass = match pass_kind {
-            PassKind::AmbientShadow => &letter.ambient_shadow_pass,
-            PassKind::ContactShadow => &letter.contact_shadow_pass,
-            PassKind::Foreground => &letter.white_pass,
+        let glyph_pass = if is_ambient {
+            &letter.ambient_shadow_pass
+        } else {
+            &letter.contact_shadow_pass
         };
+
+        let count = (draw_x_end - draw_x_start) as usize;
 
         for draw_y_offset in draw_y_start..draw_y_end {
             let canvas_y = draw_y + draw_y_offset;
@@ -184,7 +194,91 @@ fn draw_pass(
             let letter_col_idx = draw_x_start as usize;
             let letter_pixel_start = letter_row_idx * letter_w + letter_col_idx;
 
-            let count = (draw_x_end - draw_x_start) as usize;
+            let canvas_pixel_end = canvas_pixel_start + count * 4;
+            let letter_pixel_end = letter_pixel_start + count;
+
+            let target_pixels = &mut canvas_buf[canvas_pixel_start..canvas_pixel_end];
+            let letter_row = &glyph_pass[letter_pixel_start..letter_pixel_end];
+
+            for (pixel, glyph) in target_pixels.chunks_exact_mut(4).zip(letter_row.iter()) {
+                if glyph.fg_a == 0 {
+                    continue;
+                }
+
+                let inv_a = u32::from(glyph.inv_a);
+                let fg_a = u32::from(glyph.fg_a);
+
+                let scale = |bg: u8| -> u8 {
+                    let t = u32::from(bg) * inv_a + 128;
+                    ((t + (t >> 8)) >> 8) as u8
+                };
+
+                pixel[0] = scale(pixel[0]);
+                pixel[1] = scale(pixel[1]);
+                pixel[2] = scale(pixel[2]);
+                let t_alpha = u32::from(pixel[3]) * inv_a + 128;
+                pixel[3] = (fg_a + ((t_alpha + (t_alpha >> 8)) >> 8)) as u8;
+            }
+        }
+
+        pos.x += i32::from(letter.advance_width);
+    }
+}
+
+#[allow(clippy::many_single_char_names, clippy::cast_sign_loss, clippy::similar_names)]
+fn draw_foreground_pass(
+    canvas_width: u32,
+    canvas_height: u32,
+    canvas_buf: &mut [u8],
+    print_number: &[u8],
+    mut pos: Point<i32>,
+) {
+    let canvas_width = canvas_width.cast_signed();
+    let canvas_height = canvas_height.cast_signed();
+    let canvas_w = canvas_width as usize;
+
+    for &b in print_number {
+        let letter = match b {
+            b'#' => &LETTERS.hash,
+            b'0'..=b'9' => &LETTERS.digits[(b - b'0') as usize],
+            _ => continue,
+        };
+
+        let letter_width = i32::from(letter.width);
+        let letter_height = i32::from(letter.height);
+        let letter_w = letter_width as usize;
+
+        let draw_y = pos.y + i32::from(letter.offset_y);
+
+        let draw_y_start = 0.max(-draw_y);
+        let draw_y_end = letter_height.min(canvas_height - draw_y);
+
+        if draw_y_start >= draw_y_end {
+            pos.x += i32::from(letter.advance_width);
+            continue;
+        }
+
+        let draw_x_start = 0.max(-(pos.x + i32::from(letter.offset_x)));
+        let draw_x_end = letter_width.min(canvas_width - (pos.x + i32::from(letter.offset_x)));
+
+        if draw_x_start >= draw_x_end {
+            pos.x += i32::from(letter.advance_width);
+            continue;
+        }
+
+        let glyph_pass = &letter.white_pass;
+        let count = (draw_x_end - draw_x_start) as usize;
+
+        for draw_y_offset in draw_y_start..draw_y_end {
+            let canvas_y = draw_y + draw_y_offset;
+
+            let canvas_row_idx = canvas_y as usize;
+            let canvas_col_idx = (pos.x + i32::from(letter.offset_x) + draw_x_start) as usize;
+            let canvas_pixel_start = (canvas_row_idx * canvas_w + canvas_col_idx) * 4;
+
+            let letter_row_idx = draw_y_offset as usize;
+            let letter_col_idx = draw_x_start as usize;
+            let letter_pixel_start = letter_row_idx * letter_w + letter_col_idx;
 
             let canvas_pixel_end = canvas_pixel_start + count * 4;
             let letter_pixel_end = letter_pixel_start + count;
@@ -197,25 +291,8 @@ fn draw_pass(
                     continue;
                 }
 
-                if pass_kind == PassKind::Foreground && glyph.fg_a == 255 {
+                if glyph.fg_a == 255 {
                     pixel.copy_from_slice(&[255, 255, 255, 255]);
-                    continue;
-                }
-
-                if pass_kind != PassKind::Foreground {
-                    let inv_a = u32::from(glyph.inv_a);
-                    let fg_a = u32::from(glyph.fg_a);
-
-                    let scale = |bg: u8| -> u8 {
-                        let t = u32::from(bg) * inv_a + 128;
-                        ((t + (t >> 8)) >> 8) as u8
-                    };
-
-                    pixel[0] = scale(pixel[0]);
-                    pixel[1] = scale(pixel[1]);
-                    pixel[2] = scale(pixel[2]);
-                    let t_alpha = u32::from(pixel[3]) * inv_a + 128;
-                    pixel[3] = (fg_a + ((t_alpha + (t_alpha >> 8)) >> 8)) as u8;
                     continue;
                 }
 
@@ -223,15 +300,15 @@ fn draw_pass(
                 let fg_a = u32::from(glyph.fg_a);
                 let inv_a = u32::from(glyph.inv_a);
 
-                let blend = |bg: u8, fg: u32, inv: u32| -> u8 {
-                    let t = u32::from(bg) * inv + 128;
+                let blend = |bg: u8, fg: u32| -> u8 {
+                    let t = u32::from(bg) * inv_a + 128;
                     (fg + ((t + (t >> 8)) >> 8)) as u8
                 };
 
-                pixel[0] = blend(pixel[0], fg_rgb, inv_a);
-                pixel[1] = blend(pixel[1], fg_rgb, inv_a);
-                pixel[2] = blend(pixel[2], fg_rgb, inv_a);
-                pixel[3] = blend(pixel[3], fg_a, inv_a);
+                pixel[0] = blend(pixel[0], fg_rgb);
+                pixel[1] = blend(pixel[1], fg_rgb);
+                pixel[2] = blend(pixel[2], fg_rgb);
+                pixel[3] = blend(pixel[3], fg_a);
             }
         }
 
