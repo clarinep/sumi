@@ -77,7 +77,6 @@ impl CardRenderer {
     // creates the final image.
     // if an image cant render your drop in 5 seconds, Too bad!
     // in blair-go side your cooldown wont get used. users can just try dropping again.
-    #[tracing::instrument(skip(self), err)]
     pub async fn render_drop(
         &self,
         left_card_name: &str,
@@ -87,6 +86,14 @@ impl CardRenderer {
     ) -> Result<Bytes> {
         let render_future = async {
             let start = Instant::now();
+
+            // Fetch cards from cache first so semaphore permits are only held
+            // during active CPU rendering, avoiding pipeline starvation.
+            let (left_card, right_card) = try_join!(
+                self.card_cache.get(left_card_name),
+                self.card_cache.get(right_card_name)
+            )?;
+
             let permit = self
                 .cpu_semaphore
                 .clone()
@@ -98,15 +105,7 @@ impl CardRenderer {
                 return Err(RenderError::Timeout);
             }
 
-            let start_fetch = Instant::now();
-            let (left_card, right_card) = try_join!(
-                self.card_cache.get(left_card_name),
-                self.card_cache.get(right_card_name)
-            )?;
-            let fetch_elapsed = start_fetch.elapsed();
-            tracing::debug!("fetching cards took {:.3}ms", fetch_elapsed.as_secs_f64() * 1000.0);
-
-            // move the heavy image work to a background thread
+            // Move the heavy image work to a background thread
             let result = task::spawn_blocking(move || {
                 let _lock = permit;
                 create_drop_image(&left_card, &right_card, left_print_number, right_print_number)
@@ -120,5 +119,35 @@ impl CardRenderer {
         timeout(Duration::from_secs(TIMEOUT_SECONDS), render_future)
             .await
             .map_err(|_| RenderError::Timeout)?
+    }
+
+    pub async fn render_random_drop(
+        &self,
+        left_override: Option<&str>,
+        right_override: Option<&str>,
+    ) -> Result<(Bytes, String, String, u16, u16)> {
+        let left = match left_override {
+            Some(c) => c.to_string(),
+            None => self
+                .card_cache
+                .random_card()
+                .ok_or_else(|| RenderError::Internal("no cards found in assets".to_string()))?
+                .to_string(),
+        };
+
+        let right = match right_override {
+            Some(c) => c.to_string(),
+            None => self
+                .card_cache
+                .random_card()
+                .ok_or_else(|| RenderError::Internal("no cards found in assets".to_string()))?
+                .to_string(),
+        };
+
+        let left_print = PrintNumber::new(fastrand::u32(1..=9));
+        let right_print = PrintNumber::new(fastrand::u32(1..=9));
+
+        let bytes = self.render_drop(&left, &right, left_print, right_print).await?;
+        Ok((bytes, left, right, left_print.value(), right_print.value()))
     }
 }
