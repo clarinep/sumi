@@ -54,7 +54,7 @@ async fn main() {
     aegis();
 
     let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sumi=debug,info"));
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sumi=info"));
 
     fmt().with_env_filter(filter).event_format(LogFormatter).init();
 
