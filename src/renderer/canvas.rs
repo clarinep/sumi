@@ -1,50 +1,97 @@
-use std::{sync::LazyLock, time::Instant};
+use std::sync::LazyLock;
 
 use bytes::Bytes;
 use crossbeam_queue::ArrayQueue;
-use itoa::Buffer;
 
 use super::{
     PrintNumber,
     encoder::encode_webp,
     error::Result,
     pixels::{Point, RawCardImage},
-    print::{TEXT_SIZE, draw_print_number, measure_print_number},
+    print::{TEXT_SIZE, draw_print_number, measure_print_number, ref_number_width},
 };
 
 const TEXT_PADDING_FROM_EDGE: i32 = 190;
 const PADDING_BETWEEN_CARDS: u32 = 20;
 const TEXT_PADDING_FROM_BOTTOM: i32 = 80;
 
+// Combines two card images into destination buffer in a single row-by-row pass.
+// Writing both cards to the destination row while it is cached in L1/L2
+// avoids sweeping through the 6.5MB buffer twice and eliminates cache misses.
 #[inline]
-fn copy_card_pixels(buffer: &mut [u8], card: &RawCardImage, total_width: u32, pos: Point<u32>) {
-    let card_row_bytes = (card.size.width * 4) as usize;
+fn composite_cards(
+    buffer: &mut [u8],
+    left_card: &RawCardImage,
+    right_card: &RawCardImage,
+    total_width: u32,
+    left_x: u32,
+    right_x: u32,
+    card_y: u32,
+) {
+    let left_row_bytes = (left_card.size.width * 4) as usize;
+    let right_row_bytes = (right_card.size.width * 4) as usize;
     let total_row_bytes = (total_width * 4) as usize;
 
-    let dest_rows = buffer.chunks_exact_mut(total_row_bytes);
-    let src_rows = card.pixels.chunks_exact(card_row_bytes);
+    let left_x_offset = (left_x * 4) as usize;
+    let right_x_offset = (right_x * 4) as usize;
 
-    for (dest_row, src_row) in
-        dest_rows.skip(pos.y as usize).zip(src_rows).take(card.size.height as usize)
-    {
-        let x_offset = (pos.x * 4) as usize;
-        dest_row[x_offset..x_offset + card_row_bytes].copy_from_slice(src_row);
+    let common_height = (left_card.size.height.min(right_card.size.height)) as usize;
+    let mut dest_offset = (card_y as usize) * total_row_bytes;
+    let mut left_src_offset = 0;
+    let mut right_src_offset = 0;
+
+    for _ in 0..common_height {
+        buffer[dest_offset + left_x_offset..dest_offset + left_x_offset + left_row_bytes]
+            .copy_from_slice(&left_card.pixels[left_src_offset..left_src_offset + left_row_bytes]);
+        buffer[dest_offset + right_x_offset..dest_offset + right_x_offset + right_row_bytes]
+            .copy_from_slice(&right_card.pixels[right_src_offset..right_src_offset + right_row_bytes]);
+
+        dest_offset += total_row_bytes;
+        left_src_offset += left_row_bytes;
+        right_src_offset += right_row_bytes;
+    }
+
+    if left_card.size.height > right_card.size.height {
+        let extra = (left_card.size.height - right_card.size.height) as usize;
+        for _ in 0..extra {
+            buffer[dest_offset + left_x_offset..dest_offset + left_x_offset + left_row_bytes]
+                .copy_from_slice(&left_card.pixels[left_src_offset..left_src_offset + left_row_bytes]);
+            dest_offset += total_row_bytes;
+            left_src_offset += left_row_bytes;
+        }
+    } else if right_card.size.height > left_card.size.height {
+        let extra = (right_card.size.height - left_card.size.height) as usize;
+        for _ in 0..extra {
+            buffer[dest_offset + right_x_offset..dest_offset + right_x_offset + right_row_bytes]
+                .copy_from_slice(&right_card.pixels[right_src_offset..right_src_offset + right_row_bytes]);
+            dest_offset += total_row_bytes;
+            right_src_offset += right_row_bytes;
+        }
     }
 }
 
+// Inlined branchless-friendly digit formatting for values 1..=999
 #[inline]
-fn format_print_number(print_num: u16, buf: &mut [u8; 8]) -> &[u8] {
+fn format_print_number(val: u16, buf: &mut [u8; 8]) -> &[u8] {
     buf[0] = b'#';
-    let mut itoa = Buffer::new();
-    let s = itoa.format(print_num);
-    let len = 1 + s.len();
-    buf[1..len].copy_from_slice(s.as_bytes());
-    &buf[..len]
+    if val < 10 {
+        buf[1] = b'0' + val as u8;
+        &buf[..2]
+    } else if val < 100 {
+        buf[1] = b'0' + (val / 10) as u8;
+        buf[2] = b'0' + (val % 10) as u8;
+        &buf[..3]
+    } else {
+        buf[1] = b'0' + (val / 100) as u8;
+        buf[2] = b'0' + ((val / 10) % 10) as u8;
+        buf[3] = b'0' + (val % 10) as u8;
+        &buf[..4]
+    }
 }
 
 static DROP_POOL: LazyLock<ArrayQueue<Vec<u8>>> =
     LazyLock::new(|| ArrayQueue::new(MAX_POOL_BUFFERS));
-const MAX_POOL_BUFFERS: usize = 16;
+const MAX_POOL_BUFFERS: usize = 32;
 
 struct BufferGuard {
     buffer: Vec<u8>,
@@ -53,6 +100,9 @@ struct BufferGuard {
 impl BufferGuard {
     #[inline]
     fn new(mut buffer: Vec<u8>, required_len: usize) -> Self {
+        // Only allocate/zero when buffer is fresh or dimensions change.
+        // Reused pool buffers are already required_len; card rows fully overwrite
+        // active pixel areas, and margins remain transparent without re-zeroing 6.5MB.
         if buffer.len() != required_len {
             buffer.clear();
             buffer.resize(required_len, 0);
@@ -93,8 +143,6 @@ pub(super) fn create_drop_image(
     left_card_print: PrintNumber,
     right_card_print: PrintNumber,
 ) -> Result<Bytes> {
-    let start_canvas = Instant::now();
-
     // count the dimensions of our drop image
     let left_width = left_card.size.width;
     let right_width = right_card.size.width;
@@ -113,9 +161,16 @@ pub(super) fn create_drop_image(
     let right_card_x = left_width + PADDING_BETWEEN_CARDS * 2;
     let card_y = PADDING_BETWEEN_CARDS;
 
-    // copy pixels from left and right card into buffer.
-    copy_card_pixels(&mut buffer, left_card, total_width, Point::new(left_card_x, card_y));
-    copy_card_pixels(&mut buffer, right_card, total_width, Point::new(right_card_x, card_y));
+    // copy pixels from both cards in a single row pass to keep cache lines hot
+    composite_cards(
+        &mut buffer,
+        left_card,
+        right_card,
+        total_width,
+        left_card_x,
+        right_card_x,
+        card_y,
+    );
 
     let mut left_print_buf = [0u8; 8];
     let left_print = format_print_number(left_card_print.value(), &mut left_print_buf);
@@ -123,15 +178,11 @@ pub(super) fn create_drop_image(
     let mut right_print_buf = [0u8; 8];
     let right_print = format_print_number(right_card_print.value(), &mut right_print_buf);
 
-    let canvas_time = start_canvas.elapsed();
-    let start_print = Instant::now();
-
     // count positions for text and draw it to the image
     let left_print_width = measure_print_number(left_print);
     let right_print_width = measure_print_number(right_print);
 
-    let ref_width = measure_print_number(b"#00");
-    let right_padding = TEXT_PADDING_FROM_EDGE - ref_width;
+    let right_padding = TEXT_PADDING_FROM_EDGE - ref_number_width();
 
     let left_print_x = (left_card_x + left_width).cast_signed() - right_padding - left_print_width;
     let right_print_x =
@@ -153,19 +204,6 @@ pub(super) fn create_drop_image(
         Point::new(right_print_x, print_y),
     );
 
-    let print_time = start_print.elapsed();
-    let start_encode = Instant::now();
-
     // encode final drop image to webp
-    let result = encode_webp(total_width, total_height, &buffer[..required_len]);
-    let encode_time = start_encode.elapsed();
-
-    tracing::debug!(
-        "spent: paste={:.2}ms, font={:.2}ms, [encode={:.3}ms]",
-        canvas_time.as_secs_f64() * 1000.0,
-        print_time.as_secs_f64() * 1000.0,
-        encode_time.as_secs_f64() * 1000.0
-    );
-
-    result
+    encode_webp(total_width, total_height, &buffer[..required_len])
 }
