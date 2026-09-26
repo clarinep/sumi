@@ -18,7 +18,7 @@ use std::{
 use ahash::{HashMap, RandomState};
 use dashmap::DashMap;
 use tokio::{
-    fs as tokio_fs, spawn,
+    spawn,
     task::{self, JoinSet},
 };
 
@@ -41,6 +41,38 @@ impl Debug for CardCache {
             .field("file_index_len", &self.file_index.len())
             .finish_non_exhaustive() // intentional for hashmap
     }
+}
+
+// helper to read and decode a webp card from disk.
+// it'll be shared in runtime cache miss and prewarm.
+fn decode_card_from_disk(path: &Path) -> Result<(Arc<RawCardImage>, u64)> {
+    let file_bytes = fs::read(path).map_err(|e| {
+        RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
+    })?;
+
+    if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
+        tracing::warn!("rejected '{}' (only webp supported)", path.display());
+        return Err(RenderError::Internal(format!("'{}' is not a webp", path.display())));
+    }
+
+    let file_len = u64::try_from(file_bytes.len()).unwrap_or(u64::MAX);
+
+    let (pixels, width, height) = webpx::decode_rgba(&file_bytes).map_err(|e| {
+        RenderError::Internal(format!("failed to decode webp for '{}': {e:?}", path.display()))
+    })?;
+
+    if width != 725 || height != 1040 {
+        tracing::warn!(
+            "card '{}' dimension is {}x{} (expected 725x1040)",
+            path.display(),
+            width,
+            height
+        );
+    }
+
+    let image = RawCardImage { size: Size::new(width, height), pixels: pixels.into_boxed_slice() };
+
+    Ok((Arc::new(image), file_len))
 }
 
 impl CardCache {
@@ -139,38 +171,11 @@ impl CardCache {
                 let warmed_disk_bytes = warmed_disk_bytes.clone();
 
                 join_set.spawn(async move {
-                    let Ok(file_bytes) = tokio_fs::read(&path).await else {
-                        return;
-                    };
+                    let result = task::spawn_blocking(move || decode_card_from_disk(&path).ok())
+                        .await
+                        .unwrap_or(None);
 
-                    // check if its webp or not.
-                    if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
-                        tracing::warn!("skipped '{}' (only webp supported)", path.display());
-                        return;
-                    }
-
-                    let file_len = u64::try_from(file_bytes.len()).unwrap_or(u64::MAX);
-
-                    let result = task::spawn_blocking(move || {
-                        webpx::decode_rgba(&file_bytes).ok().map(|(pixels, width, height)| {
-                            if width != 725 || height != 1040 {
-                                tracing::warn!(
-                                    "card '{}' dimension is {}x{} (expected 725x1040)",
-                                    path.display(),
-                                    width,
-                                    height
-                                );
-                            }
-                            Arc::new(RawCardImage {
-                                size: Size::new(width, height),
-                                pixels: pixels.into_boxed_slice(),
-                            })
-                        })
-                    })
-                    .await
-                    .unwrap_or(None);
-
-                    if let Some(arc_img) = result {
+                    if let Some((arc_img, file_len)) = result {
                         let size_kb = arc_img.pixels.len() / 1024;
                         memory.insert(name, arc_img);
                         warmed.fetch_add(1, Ordering::Relaxed);
@@ -210,38 +215,9 @@ impl CardCache {
             .cloned()
             .ok_or_else(|| RenderError::CardNotFound(name.to_string()))?;
 
-        let file_bytes = tokio_fs::read(&path).await.map_err(|e| {
-            RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
-        })?;
-
-        if !file_bytes.starts_with(b"RIFF") || file_bytes.get(8..12) != Some(b"WEBP") {
-            tracing::warn!("rejected '{}' (only webp supported)", path.display());
-            return Err(RenderError::Internal(format!("'{}' is not a webp", path.display())));
-        }
-
-        let arc_img = task::spawn_blocking(move || {
-            let (pixels, width, height) = webpx::decode_rgba(&file_bytes).map_err(|e| {
-                RenderError::Internal(format!(
-                    "failed to decode webp for '{}': {e:?}",
-                    path.display()
-                ))
-            })?;
-
-            if width != 725 || height != 1040 {
-                tracing::warn!(
-                    "card '{}' dimension is {}x{} (expected 725x1040)",
-                    path.display(),
-                    width,
-                    height
-                );
-            }
-
-            let image =
-                RawCardImage { size: Size::new(width, height), pixels: pixels.into_boxed_slice() };
-            Ok(Arc::new(image))
-        })
-        .await
-        .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))??;
+        let (arc_img, _) = task::spawn_blocking(move || decode_card_from_disk(&path))
+            .await
+            .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))??;
 
         Ok(arc_img)
     }
