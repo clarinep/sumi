@@ -33,6 +33,7 @@ const MAX_CACHE_SIZE_KB: usize = 2_000_000; // -- 2 gb limit in kilobyte
 pub struct CardCache {
     memory: Arc<DashMap<Arc<str>, Arc<RawCardImage>, RandomState>>,
     file_index: Arc<HashMap<Arc<str>, Arc<Path>>>,
+    keys: Arc<[Arc<str>]>,
 }
 
 impl Debug for CardCache {
@@ -44,7 +45,7 @@ impl Debug for CardCache {
 }
 
 // helper to read and decode a webp card from disk.
-// it'll be shared in runtime cache miss and prewarm.
+// shared between prewarm and runtime on-demand misses.
 fn decode_card_from_disk(path: &Path) -> Result<(Arc<RawCardImage>, u64)> {
     let file_bytes = fs::read(path).map_err(|e| {
         RenderError::Internal(format!("failed to open file '{}': {e}", path.display()))
@@ -70,7 +71,10 @@ fn decode_card_from_disk(path: &Path) -> Result<(Arc<RawCardImage>, u64)> {
         );
     }
 
-    let image = RawCardImage { size: Size::new(width, height), pixels: pixels.into_boxed_slice() };
+    let image = RawCardImage {
+        size: Size::new(width, height),
+        pixels: pixels.into_boxed_slice(),
+    };
 
     Ok((Arc::new(image), file_len))
 }
@@ -86,9 +90,12 @@ impl CardCache {
             ));
         }
 
+        let keys: Arc<[Arc<str>]> = file_index.keys().cloned().collect();
+
         Ok(Self {
             memory: Arc::new(DashMap::with_hasher(RandomState::new())),
             file_index: Arc::new(file_index),
+            keys,
         })
     }
 
@@ -220,5 +227,20 @@ impl CardCache {
             .map_err(|e| RenderError::Internal(format!("task panicked: {e}")))??;
 
         Ok(arc_img)
+    }
+
+    #[inline]
+    pub fn card_names(&self) -> &[Arc<str>] {
+        &self.keys
+    }
+
+    #[inline]
+    pub fn random_card(&self) -> Option<Arc<str>> {
+        if self.keys.is_empty() {
+            None
+        } else {
+            let idx = fastrand::usize(..self.keys.len());
+            Some(self.keys[idx].clone())
+        }
     }
 }
