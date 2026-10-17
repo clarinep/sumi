@@ -28,6 +28,9 @@
   tracing            = { version = "0.1.44", features = ["attributes"], default-features = false }
   tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"], default-features = false }
   webpx              = { version = "0.4.0", features = ["decode", "encode"], default-features = false }
+  butteraugli        = ">=0.9.3"
+  imgref             = "1.11"
+  rgb                = "0.8"
 
 [[bin]]
 name = "sumi"
@@ -40,11 +43,6 @@ path = "src/bin/bot.rs"
 [[bin]]
 name = "calibrate"
 path = "src/bin/calibrate.rs"
-
-[dev-dependencies]
-butteraugli = ">=0.9.3"
-imgref = "1.11"
-rgb = "0.8"
 
 [lints.rust]
   rust_2024_compatibility = { level = "warn", priority = -1 }
