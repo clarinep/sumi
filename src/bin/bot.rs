@@ -260,10 +260,7 @@ async fn stats(ctx: Context<'_>) -> Result<(), Error> {
     let cards_count = ctx.data().cards.len();
 
     let text = format!(
-        "```ansi\n\
-\x1b[1;36mSUMI ENGINE STATS\x1b[0m\n\
-\n\
-\x1b[0;32m  Uptime        \x1b[0m : \x1b[1;37m{uptime_fmt}\x1b[0m\n\
+        "```ansi\x1b[0;32m  Uptime        \x1b[0m : \x1b[1;37m{uptime_fmt}\x1b[0m\n\
 \x1b[0;32m  Indexed Cards \x1b[0m : \x1b[1;37m{cards_count} cards\x1b[0m \x1b[0;30m(in-memory cache)\x1b[0m\n\
 \x1b[0;32m  Gateway Ping  \x1b[0m : \x1b[1;37m{ping_fmt}\x1b[0m\n\
 \n\
