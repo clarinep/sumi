@@ -31,7 +31,7 @@ struct LetterSet {
 }
 
 static LETTERS: LazyLock<LetterSet> = LazyLock::new(|| {
-    let font_data = include_bytes!("../../assets/LexendDeca-Bold.ttf") as &[u8];
+    let font_data: &[u8] = include_bytes!("../../assets/LexendDeca-Bold.ttf");
     let font =
         Font::from_bytes(font_data, FontSettings::default()).expect("could not load font file");
     // safe to unwrap because font is built in and won't change during runtime
