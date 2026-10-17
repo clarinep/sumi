@@ -1,8 +1,4 @@
-use std::{
-    env,
-    path::Path,
-    time::Instant,
-};
+use std::{env, path::Path, time::Instant};
 
 use butteraugli::{ButteraugliParams, butteraugli};
 use imgref::ImgRef;
@@ -10,10 +6,11 @@ use rgb::RGB8;
 use sumi::renderer::CardCache;
 use webpx::{AlphaFilter, EncoderConfig, ImageHint, Preset, Unstoppable};
 
-const QUALITY_STEPS: &[f32] = &[65.0, 70.0, 75.0, 78.0, 80.0, 82.0, 85.0, 90.0];
+const QUALITIES: [f32; 8] = [65.0, 70.0, 75.0, 78.0, 80.0, 82.0, 85.0, 90.0];
+const DISCORD_BG: RGB8 = RGB8 { r: 49, g: 51, b: 56 }; // #313338
 
-fn encode_at_quality(width: u32, height: u32, rgba: &[u8], quality: f32) -> Vec<u8> {
-    let settings = EncoderConfig::new()
+fn encode_webp(w: u32, h: u32, rgba: &[u8], quality: f32) -> Vec<u8> {
+    EncoderConfig::new()
         .preset(Preset::Picture)
         .hint(ImageHint::Picture)
         .quality(quality)
@@ -24,161 +21,132 @@ fn encode_at_quality(width: u32, height: u32, rgba: &[u8], quality: f32) -> Vec<
         .low_memory(false)
         .pass(1)
         .exact(false)
-        .segments(1);
-
-    settings
-        .encode_rgba(rgba, width, height, Unstoppable)
-        .expect("WebP encode failed")
+        .segments(1)
+        .encode_rgba(rgba, w, h, Unstoppable)
+        .expect("webp encode failed")
 }
 
-// blend alpha pix ke discord bg color biar butteraugli gak binggung
+// blend alpha pix ke discord bg color biar butteraugli ga ngitung pixel tembus pandang
 #[inline]
-fn composite_over_discord_bg(c: &[u8]) -> RGB8 {
-    let a = c[3] as u32;
-    if a == 0 {
-        return RGB8::new(49, 51, 56);
-    }
-    if a == 255 {
-        return RGB8::new(c[0], c[1], c[2]);
-    }
-    let inv_a = 255 - a;
-    let r = ((c[0] as u32 * a + 49 * inv_a + 127) / 255) as u8;
-    let g = ((c[1] as u32 * a + 51 * inv_a + 127) / 255) as u8;
-    let b = ((c[2] as u32 * a + 56 * inv_a + 127) / 255) as u8;
-    RGB8::new(r, g, b)
-}
-
-fn compute_butteraugli_score(
-    width: usize,
-    height: usize,
-    original_rgba: &[u8],
-    distorted_rgba: &[u8],
-) -> f64 {
-    let orig_rgb: Vec<RGB8> = original_rgba
-        .chunks_exact(4)
-        .map(composite_over_discord_bg)
-        .collect();
-
-    let dist_rgb: Vec<RGB8> = distorted_rgba
-        .chunks_exact(4)
-        .map(composite_over_discord_bg)
-        .collect();
-
-    let img1 = ImgRef::new(&orig_rgb, width, height);
-    let img2 = ImgRef::new(&dist_rgb, width, height);
-    let params = ButteraugliParams::default();
-
-    match butteraugli(img1, img2, &params) {
-        Ok(res) => res.score,
-        Err(e) => {
-            eprintln!("butteraugli comparison error: {e:?}");
-            99.0
+fn blend_bg(c: &[u8]) -> RGB8 {
+    match c[3] {
+        0 => DISCORD_BG,
+        255 => RGB8::new(c[0], c[1], c[2]),
+        a => {
+            let alpha = u32::from(a);
+            let inv_a = 255 - alpha;
+            let blend = |fg: u8, bg: u8| ((u32::from(fg) * alpha + u32::from(bg) * inv_a + 127) / 255) as u8;
+            RGB8::new(
+                blend(c[0], DISCORD_BG.r),
+                blend(c[1], DISCORD_BG.g),
+                blend(c[2], DISCORD_BG.b),
+            )
         }
     }
 }
 
-struct QualityResult {
-    quality: f32,
+fn score(w: usize, h: usize, orig_rgba: &[u8], dist_rgba: &[u8]) -> f64 {
+    let orig: Vec<RGB8> = orig_rgba.chunks_exact(4).map(blend_bg).collect();
+    let dist: Vec<RGB8> = dist_rgba.chunks_exact(4).map(blend_bg).collect();
+
+    butteraugli(
+        ImgRef::new(&orig, w, h),
+        ImgRef::new(&dist, w, h),
+        &ButteraugliParams::default(),
+    )
+    .map_or(99.0, |res| res.score)
+}
+
+struct Stat {
+    q: f32,
     avg_score: f64,
     max_score: f64,
-    avg_size_kb: f64,
-    avg_time_ms: f64,
+    avg_kb: f64,
+    avg_ms: f64,
 }
 
 #[tokio::main]
 async fn main() {
     let cards_dir = env::var("CARDS_DIR").unwrap_or_else(|_| "assets".to_string());
-    println!("loading cards from '{}'..", cards_dir);
+    println!("loading cards from '{cards_dir}'..");
 
     let cache = match CardCache::new(Path::new(&cards_dir)) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("failed to start card cache: {e}");
-            eprintln!("pls set CARDS_DIR");
+            eprintln!("failed to init card cache: {e}\npls set CARDS_DIR");
             std::process::exit(1);
         }
     };
 
-    let card_names = cache.card_names();
-    if card_names.is_empty() {
+    let names = cache.card_names();
+    if names.is_empty() {
         eprintln!("? no cards found in '{cards_dir}'");
         std::process::exit(1);
     }
 
-    let test_count = card_names.len().min(15);
-    println!("selected {} samples for test..", test_count);
-    println!("!! testing {} quality levels per card..\n", QUALITY_STEPS.len());
+    let samples = names.len().min(15);
+    println!("testing {samples} cards across {} qualities..\n", QUALITIES.len());
 
-    let mut results = Vec::with_capacity(QUALITY_STEPS.len());
+    let mut stats = Vec::with_capacity(QUALITIES.len());
 
-    for &quality in QUALITY_STEPS {
+    for &q in &QUALITIES {
         let mut total_score = 0.0;
         let mut max_score = 0.0f64;
-        let mut total_size_bytes = 0;
-        let mut total_time_ms = 0.0;
+        let mut total_bytes = 0;
+        let mut total_ms = 0.0;
 
-        for name in &card_names[..test_count] {
-            let card = cache.get(name).await.expect("Failed to load card image");
-            let width = card.size.width;
-            let height = card.size.height;
-            let original_pixels = &card.pixels;
+        for name in &names[..samples] {
+            let card = cache.get(name).await.expect("failed to load card");
+            let (w, h) = (card.size.width, card.size.height);
+            let orig = &card.pixels;
 
             let start = Instant::now();
-            let webp_data = encode_at_quality(width, height, original_pixels, quality);
-            total_time_ms += start.elapsed().as_secs_f64() * 1000.0;
-            total_size_bytes += webp_data.len();
+            let webp = encode_webp(w, h, orig, q);
+            total_ms += start.elapsed().as_secs_f64() * 1000.0;
+            total_bytes += webp.len();
 
-            let (decoded_pixels, _, _) = webpx::decode_rgba(&webp_data).expect("Decode failed");
+            let (dist, _, _) = webpx::decode_rgba(&webp).expect("failed to decode webp");
+            let s = score(w as usize, h as usize, orig, &dist);
 
-            let score = compute_butteraugli_score(
-                width as usize,
-                height as usize,
-                original_pixels,
-                &decoded_pixels,
-            );
-
-            total_score += score;
-            if score > max_score {
-                max_score = score;
+            total_score += s;
+            if s > max_score {
+                max_score = s;
             }
         }
 
-        let n = test_count as f64;
-        results.push(QualityResult {
-            quality,
+        let n = samples as f64;
+        stats.push(Stat {
+            q,
             avg_score: total_score / n,
             max_score,
-            avg_size_kb: (total_size_bytes as f64 / n) / 1024.0,
-            avg_time_ms: total_time_ms / n,
+            avg_kb: (total_bytes as f64 / n) / 1024.0,
+            avg_ms: total_ms / n,
         });
     }
 
-    let baseline_size = results
+    let baseline_kb = stats
         .iter()
-        .find(|r| (r.quality - 85.0).abs() < f32::EPSILON)
-        .map(|r| r.avg_size_kb)
-        .unwrap_or(147.5);
+        .find(|s| (s.q - 85.0).abs() < f32::EPSILON)
+        .map_or(147.5, |s| s.avg_kb);
 
     println!("┌─────────┬──────────────┬──────────────┬────────────┬─────────────┬─────────────┬──────────────────────────┐");
     println!("│ Quality │ Avg Score    │ Max Score    │ Avg Size   │ Savings %   │ Encode Time │ Rating                   │");
     println!("├─────────┼──────────────┼──────────────┼────────────┼─────────────┼─────────────┼──────────────────────────┤");
 
-    for r in &results {
-        let savings = (1.0 - (r.avg_size_kb / baseline_size)) * 100.0;
-
-        let verdict = if r.avg_score < 1.0 {
-            "Fully lossless"
-        } else if r.avg_score <= 1.5 {
-            "Sweet spot"
-        } else if r.avg_score <= 2.5 {
-            "Moderate trashy"
-        } else {
-            "Extreme trashy artifacts"
+    for s in &stats {
+        let savings = (1.0 - (s.avg_kb / baseline_kb)) * 100.0;
+        let rating = match s.avg_score {
+            score if score < 1.0 => "Fully lossless",
+            score if score <= 1.5 => "Sweet spot",
+            score if score <= 2.5 => "Moderate trashy",
+            _ => "Extreme trashy artifacts",
         };
 
         println!(
             "│ Q {:<5.1} │ {:<12.3} │ {:<12.3} │ {:>6.1} KB  │ {:>+6.1}%     │ {:>7.2} ms │ {:<24} │",
-            r.quality, r.avg_score, r.max_score, r.avg_size_kb, savings, r.avg_time_ms, verdict
+            s.q, s.avg_score, s.max_score, s.avg_kb, savings, s.avg_ms, rating
         );
     }
+
+    println!("└─────────┴──────────────┴──────────────┴────────────┴─────────────┴─────────────┴──────────────────────────┘");
 }
