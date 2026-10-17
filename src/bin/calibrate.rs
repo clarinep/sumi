@@ -26,7 +26,7 @@ fn encode_webp(w: u32, h: u32, rgba: &[u8], quality: f32) -> Vec<u8> {
         .expect("webp encode failed")
 }
 
-// blend alpha pix ke discord bg color biar butteraugli ga ngitung pixel tembus pandang
+// blend alpha pixq biar butteraugli ga ngitung pixel gak ngaruh
 #[inline]
 fn blend_bg(c: &[u8]) -> RGB8 {
     match c[3] {
@@ -73,7 +73,7 @@ async fn main() {
     let cache = match CardCache::new(Path::new(&cards_dir)) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("failed to init card cache: {e}\npls set CARDS_DIR");
+            eprintln!("failed to start card cache: {e}\npls set CARDS_DIR");
             std::process::exit(1);
         }
     };
@@ -129,24 +129,22 @@ async fn main() {
         .find(|s| (s.q - 85.0).abs() < f32::EPSILON)
         .map_or(147.5, |s| s.avg_kb);
 
-    println!("┌─────────┬──────────────┬──────────────┬────────────┬─────────────┬─────────────┬──────────────────────────┐");
-    println!("│ Quality │ Avg Score    │ Max Score    │ Avg Size   │ Savings %   │ Encode Time │ Rating                   │");
-    println!("├─────────┼──────────────┼──────────────┼────────────┼─────────────┼─────────────┼──────────────────────────┤");
+    println!("\n  quality    avg score    max score     avg size    savings      encode    rating");
+    println!("  {}", "─".repeat(81));
 
     for s in &stats {
         let savings = (1.0 - (s.avg_kb / baseline_kb)) * 100.0;
         let rating = match s.avg_score {
-            score if score < 1.0 => "Fully lossless",
-            score if score <= 1.5 => "Sweet spot",
-            score if score <= 2.5 => "Moderate trashy",
-            _ => "Extreme trashy artifacts",
+            score if score <= 2.85 => "elysium",
+            score if score <= 3.20 => "great",
+            score if score <= 3.50 => "sweet spot",
+            score if score <= 3.85 => "moderate loss",
+            _ => "heavy loss",
         };
 
         println!(
-            "│ Q {:<5.1} │ {:<12.3} │ {:<12.3} │ {:>6.1} KB  │ {:>+6.1}%     │ {:>7.2} ms │ {:<24} │",
-            s.q, s.avg_score, s.max_score, s.avg_kb, savings, s.avg_ms, rating
+            "  Q {:<5.1}   {:>9.3}    {:>9.3}   {:>7.1} KB    {:>+5.1}%    {:>6.2} ms    {rating}",
+            s.q, s.avg_score, s.max_score, s.avg_kb, savings, s.avg_ms
         );
     }
-
-    println!("└─────────┴──────────────┴──────────────┴────────────┴─────────────┴─────────────┴──────────────────────────┘");
 }
