@@ -32,6 +32,25 @@ fn encode_at_quality(width: u32, height: u32, rgba: &[u8], quality: f32) -> Vec<
         .expect("WebP encode failed")
 }
 
+// Discord Dark Theme background (#313338 -> 49, 51, 56)
+// Blending transparent pixels over Discord background ensures Butteraugli
+// evaluates what human eyes actually see, rather than comparing invisible alpha=0 pixels.
+#[inline]
+fn composite_over_discord_bg(c: &[u8]) -> RGB8 {
+    let a = c[3] as u32;
+    if a == 0 {
+        return RGB8::new(49, 51, 56);
+    }
+    if a == 255 {
+        return RGB8::new(c[0], c[1], c[2]);
+    }
+    let inv_a = 255 - a;
+    let r = ((c[0] as u32 * a + 49 * inv_a + 127) / 255) as u8;
+    let g = ((c[1] as u32 * a + 51 * inv_a + 127) / 255) as u8;
+    let b = ((c[2] as u32 * a + 56 * inv_a + 127) / 255) as u8;
+    RGB8::new(r, g, b)
+}
+
 fn compute_butteraugli_score(
     width: usize,
     height: usize,
@@ -40,12 +59,12 @@ fn compute_butteraugli_score(
 ) -> f64 {
     let orig_rgb: Vec<RGB8> = original_rgba
         .chunks_exact(4)
-        .map(|c| RGB8::new(c[0], c[1], c[2]))
+        .map(composite_over_discord_bg)
         .collect();
 
     let dist_rgb: Vec<RGB8> = distorted_rgba
         .chunks_exact(4)
-        .map(|c| RGB8::new(c[0], c[1], c[2]))
+        .map(composite_over_discord_bg)
         .collect();
 
     let img1 = ImgRef::new(&orig_rgb, width, height);
@@ -59,6 +78,14 @@ fn compute_butteraugli_score(
             99.0
         }
     }
+}
+
+struct QualityResult {
+    quality: f32,
+    avg_score: f64,
+    max_score: f64,
+    avg_size_kb: f64,
+    avg_time_ms: f64,
 }
 
 #[tokio::main]
@@ -89,11 +116,7 @@ async fn main() {
     println!("🎴 Selected {} sample card(s) for psychovisual distortion testing.", test_count);
     println!("🔬 Testing {} quality levels per card...\n", QUALITY_STEPS.len());
 
-    println!("┌─────────┬──────────────┬──────────────┬────────────┬─────────────┬─────────────┬──────────────────────────┐");
-    println!("│ Quality │ Avg Score    │ Max Score    │ Avg Size   │ Savings %   │ Encode Time │ Rating                   │");
-    println!("├─────────┼──────────────┼──────────────┼────────────┼─────────────┼─────────────┼──────────────────────────┤");
-
-    let mut baseline_size = 0.0;
+    let mut results = Vec::with_capacity(QUALITY_STEPS.len());
 
     for &quality in QUALITY_STEPS {
         let mut total_score = 0.0;
@@ -131,25 +154,33 @@ async fn main() {
         }
 
         let n = test_count as f64;
-        let avg_score = total_score / n;
-        let avg_size_kb = (total_size_bytes as f64 / n) / 1024.0;
-        let avg_time_ms = total_time_ms / n;
+        results.push(QualityResult {
+            quality,
+            avg_score: total_score / n,
+            max_score,
+            avg_size_kb: (total_size_bytes as f64 / n) / 1024.0,
+            avg_time_ms: total_time_ms / n,
+        });
+    }
 
-        if (quality - 85.0).abs() < f32::EPSILON {
-            baseline_size = avg_size_kb;
-        }
+    let baseline_size = results
+        .iter()
+        .find(|r| (r.quality - 85.0).abs() < f32::EPSILON)
+        .map(|r| r.avg_size_kb)
+        .unwrap_or(147.5);
 
-        let savings = if baseline_size > 0.0 {
-            (1.0 - (avg_size_kb / baseline_size)) * 100.0
-        } else {
-            0.0
-        };
+    println!("┌─────────┬──────────────┬──────────────┬────────────┬─────────────┬─────────────┬──────────────────────────┐");
+    println!("│ Quality │ Avg Score    │ Max Score    │ Avg Size   │ Savings %   │ Encode Time │ Rating                   │");
+    println!("├─────────┼──────────────┼──────────────┼────────────┼─────────────┼─────────────┼──────────────────────────┤");
 
-        let verdict = if avg_score < 1.0 {
+    for r in &results {
+        let savings = (1.0 - (r.avg_size_kb / baseline_size)) * 100.0;
+
+        let verdict = if r.avg_score < 1.0 {
             "✓ Perceptual Lossless"
-        } else if avg_score <= 1.5 {
+        } else if r.avg_score <= 1.5 {
             "★ Discord Sweet Spot"
-        } else if avg_score <= 2.0 {
+        } else if r.avg_score <= 2.5 {
             "⚡ Moderate Degradation"
         } else {
             "⚠ Noticeable Artifacts"
@@ -157,7 +188,7 @@ async fn main() {
 
         println!(
             "│ Q {:<5.1} │ {:<12.3} │ {:<12.3} │ {:>6.1} KB  │ {:>+6.1}%     │ {:>7.2} ms │ {:<24} │",
-            quality, avg_score, max_score, avg_size_kb, -savings, avg_time_ms, verdict
+            r.quality, r.avg_score, r.max_score, r.avg_size_kb, savings, r.avg_time_ms, verdict
         );
     }
 
