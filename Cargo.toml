@@ -42,7 +42,7 @@ path = "src/bin/bot.rs"
 
 [[bin]]
 name = "calibrate"
-path = "src/bin/calibrate.rs"
+path = "src/bin/butteraugli.rs"
 
 [lints.rust]
   rust_2024_compatibility = { level = "warn", priority = -1 }
