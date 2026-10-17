@@ -10,7 +10,6 @@ use rgb::RGB8;
 use sumi::renderer::CardCache;
 use webpx::{AlphaFilter, EncoderConfig, ImageHint, Preset, Unstoppable};
 
-// Quality steps to sweep across during calibration
 const QUALITY_STEPS: &[f32] = &[65.0, 70.0, 75.0, 78.0, 80.0, 82.0, 85.0, 90.0];
 
 fn encode_at_quality(width: u32, height: u32, rgba: &[u8], quality: f32) -> Vec<u8> {
@@ -32,9 +31,7 @@ fn encode_at_quality(width: u32, height: u32, rgba: &[u8], quality: f32) -> Vec<
         .expect("WebP encode failed")
 }
 
-// Discord Dark Theme background (#313338 -> 49, 51, 56)
-// Blending transparent pixels over Discord background ensures Butteraugli
-// evaluates what human eyes actually see, rather than comparing invisible alpha=0 pixels.
+// blend alpha pix ke discord bg color biar butteraugli gak binggung
 #[inline]
 fn composite_over_discord_bg(c: &[u8]) -> RGB8 {
     let a = c[3] as u32;
@@ -90,31 +87,27 @@ struct QualityResult {
 
 #[tokio::main]
 async fn main() {
-    println!("═════════════════════════════════════════════════════════════════════════════════");
-    println!("  Sumi Offline WebP Quality Calibrator (Butteraugli Psychovisual Metric)        ");
-    println!("═════════════════════════════════════════════════════════════════════════════════\n");
-
     let cards_dir = env::var("CARDS_DIR").unwrap_or_else(|_| "assets".to_string());
-    println!("📂 Loading card library from '{}'...", cards_dir);
+    println!("loading cards from '{}'..", cards_dir);
 
     let cache = match CardCache::new(Path::new(&cards_dir)) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("❌ Failed to initialize card cache: {e}");
-            eprintln!("   Ensure CARDS_DIR is set or run from the sumi project root with assets/ present.");
+            eprintln!("failed to start card cache: {e}");
+            eprintln!("pls set CARDS_DIR");
             std::process::exit(1);
         }
     };
 
     let card_names = cache.card_names();
     if card_names.is_empty() {
-        eprintln!("❌ No cards found in '{cards_dir}'. Cannot run calibration.");
+        eprintln!("? no cards found in '{cards_dir}'");
         std::process::exit(1);
     }
 
     let test_count = card_names.len().min(15);
-    println!("🎴 Selected {} sample card(s) for psychovisual distortion testing.", test_count);
-    println!("🔬 Testing {} quality levels per card...\n", QUALITY_STEPS.len());
+    println!("selected {} samples for test..", test_count);
+    println!("!! testing {} quality levels per card..\n", QUALITY_STEPS.len());
 
     let mut results = Vec::with_capacity(QUALITY_STEPS.len());
 
@@ -130,16 +123,13 @@ async fn main() {
             let height = card.size.height;
             let original_pixels = &card.pixels;
 
-            // 1. Time WebP compression at this quality
             let start = Instant::now();
             let webp_data = encode_at_quality(width, height, original_pixels, quality);
             total_time_ms += start.elapsed().as_secs_f64() * 1000.0;
             total_size_bytes += webp_data.len();
 
-            // 2. Decode back to uncompressed RGBA for comparison
             let (decoded_pixels, _, _) = webpx::decode_rgba(&webp_data).expect("Decode failed");
 
-            // 3. Compute Butteraugli perceptual difference
             let score = compute_butteraugli_score(
                 width as usize,
                 height as usize,
@@ -177,13 +167,13 @@ async fn main() {
         let savings = (1.0 - (r.avg_size_kb / baseline_size)) * 100.0;
 
         let verdict = if r.avg_score < 1.0 {
-            "✓ Perceptual Lossless"
+            "Fully lossless"
         } else if r.avg_score <= 1.5 {
-            "★ Discord Sweet Spot"
+            "Sweet spot"
         } else if r.avg_score <= 2.5 {
-            "⚡ Moderate Degradation"
+            "Moderate trashy"
         } else {
-            "⚠ Noticeable Artifacts"
+            "Extreme trashy artifacts"
         };
 
         println!(
@@ -191,12 +181,4 @@ async fn main() {
             r.quality, r.avg_score, r.max_score, r.avg_size_kb, savings, r.avg_time_ms, verdict
         );
     }
-
-    println!("└─────────┴──────────────┴──────────────┴────────────┴─────────────┴─────────────┴──────────────────────────┘\n");
-    println!("💡 Evaluation Guide:");
-    println!("   • Score < 1.0 : Indistinguishable from lossless to human vision.");
-    println!("   • Score 1.0 - 1.5 : Pristine on chat/mobile screens; saves 20-35% network bandwidth.");
-    println!("   • Score > 2.0 : Visual degradation / ringing appears on sharp lines.\n");
-    println!("👉 Pick the quality level with the best savings while keeping Avg Score ≤ 1.2,");
-    println!("   then update `const WEBP_QUALITY: f32` in `src/renderer/encoder.rs`.\n");
 }
