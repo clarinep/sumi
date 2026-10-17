@@ -3,6 +3,13 @@
   version      = "1.4.0"
   edition      = "2024"
   rust-version = "1.87"
+  description  = "Ultra-fast WebP image renderer and drop compositor microservice"
+  authors      = ["Blair <blairtcg>"]
+  license      = "BlueOak-1.0.0"
+  readme       = "README.md"
+  repository   = "https://github.com/blairtcg/sumi"
+  keywords     = ["image", "webp", "renderer", "microservice", "axum"]
+  categories   = ["multimedia::images", "web-programming::http-server"]
 
 [dependencies]
   ahash              = "0.8.12"
@@ -27,5 +34,64 @@ name = "sumi"
 path = "src/main.rs"
 
 [[bin]]
-name = "bot"
+name = "sumi-bot"
 path = "src/bin/bot.rs"
+
+[[bin]]
+name = "calibrate"
+path = "src/bin/calibrate.rs"
+
+[dev-dependencies]
+butteraugli = ">=0.9.3"
+imgref = "1.11"
+rgb = "0.8"
+
+[lints.rust]
+  rust_2024_compatibility = { level = "warn", priority = -1 }
+  trivial_casts            = "warn"
+  trivial_numeric_casts    = "warn"
+  unused_import_braces     = "warn"
+  unused_qualifications    = "warn"
+
+[lints.clippy]
+  perf                     = { level = "warn", priority = -1 }
+  pedantic                 = { level = "warn", priority = -2 }
+  nursery                  = { level = "warn", priority = -3 }
+  missing_errors_doc       = "allow"
+  missing_panics_doc       = "allow"
+  must_use_candidate       = "allow"
+  cast_possible_truncation = "allow"
+  cast_precision_loss      = "allow"
+
+[profile.release]
+  opt-level        = 3
+  lto              = "fat"
+  codegen-units    = 1
+  panic            = "abort"
+  strip            = "symbols"
+  overflow-checks  = false
+  incremental      = false
+
+[profile.dev]
+  opt-level        = 0
+  debug            = false
+  incremental      = true
+
+# Optimize external dependencies in dev mode for smooth real-time rendering
+[profile.dev.package."*"]
+  opt-level        = 3
+
+# Fast compilation for proc-macros and build scripts
+[profile.dev.build-override]
+  opt-level        = 0
+
+[profile.release.build-override]
+  opt-level        = 0
+
+[profile.bench]
+  inherits         = "release"
+  opt-level        = 3
+  lto              = "fat"
+  codegen-units    = 1
+  debug            = false
+
