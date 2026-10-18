@@ -1,0 +1,35 @@
+name: Analyze Code Bloat (cargo-llvm-lines)
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  analyze:
+    name: LLVM IR & Monomorphization Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install nightly --profile minimal
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-lines
+        run: cargo install cargo-llvm-lines --locked
+
+      - name: Top 30 Functions by LLVM IR Lines (Code Size)
+        run: |
+          echo "=== Top 30 functions contributing to binary size (by IR lines) ==="
+          cargo +nightly llvm-lines --bin sumi --sort lines | head -n 35
+
+      - name: Top 30 Generic Functions by Duplication (Monomorphization Copies)
+        run: |
+          echo "=== Top 30 functions with highest generic copies ==="
+          cargo +nightly llvm-lines --bin sumi --sort copies | head -n 35
