@@ -100,12 +100,13 @@ struct BufferGuard {
 impl BufferGuard {
     #[inline]
     fn new(mut buffer: Vec<u8>, required_len: usize) -> Self {
-        // Only allocate/zero when buffer is fresh or dimensions change.
-        // Reused pool buffers are already required_len; card rows fully overwrite
-        // active pixel areas, and margins remain transparent without re-zeroing 6.5MB.
         if buffer.len() != required_len {
             buffer.clear();
             buffer.resize(required_len, 0);
+        } else {
+            // Clean slate: ensure 100% transparent pixels and zero ghost artifacts
+            // from previous renders or variable card dimensions.
+            buffer.fill(0);
         }
         Self { buffer }
     }
@@ -137,33 +138,28 @@ impl std::ops::DerefMut for BufferGuard {
 // combine two card images and add print numbers = drop image
 // we manually copy pixel rows from the card images. this is much faster
 // than creating a new blank image and using a library to paste the card images to it.
-pub(super) fn create_drop_image(
+#[inline]
+pub fn composite_drop_into(
+    buffer: &mut [u8],
     left_card: &RawCardImage,
     right_card: &RawCardImage,
     left_card_print: PrintNumber,
     right_card_print: PrintNumber,
-) -> Result<Bytes> {
-    // count the dimensions of our drop image
+) -> (u32, u32) {
     let left_width = left_card.size.width;
     let right_width = right_card.size.width;
 
     let total_width = left_width + right_width + PADDING_BETWEEN_CARDS * 3;
     let max_card_height = left_card.size.height.max(right_card.size.height);
     let total_height = max_card_height + PADDING_BETWEEN_CARDS * 2;
-
-    // make sure buffer big enough for image (width * height * 4 bytes per pixel)
     let required_len = (total_width * total_height * 4) as usize;
 
-    let mut buffer = BufferGuard::new(DROP_POOL.pop().unwrap_or_default(), required_len);
-
-    // count starting position for the left and right card.
     let left_card_x = PADDING_BETWEEN_CARDS;
     let right_card_x = left_width + PADDING_BETWEEN_CARDS * 2;
     let card_y = PADDING_BETWEEN_CARDS;
 
-    // copy pixels from both cards in a single row pass to keep cache lines hot
     composite_cards(
-        &mut buffer,
+        buffer,
         left_card,
         right_card,
         total_width,
@@ -178,7 +174,6 @@ pub(super) fn create_drop_image(
     let mut right_print_buf = [0u8; 8];
     let right_print = format_print_number(right_card_print.value(), &mut right_print_buf);
 
-    // count positions for text and draw it to the image
     let left_print_width = measure_print_number(left_print);
     let right_print_width = measure_print_number(right_print);
 
@@ -202,6 +197,56 @@ pub(super) fn create_drop_image(
         &mut buffer[..required_len],
         right_print,
         Point::new(right_print_x, print_y),
+    );
+
+    (total_width, total_height)
+}
+
+pub fn create_drop_raw(
+    left_card: &RawCardImage,
+    right_card: &RawCardImage,
+    left_card_print: PrintNumber,
+    right_card_print: PrintNumber,
+) -> (Vec<u8>, u32, u32) {
+    let total_width = left_card.size.width + right_card.size.width + PADDING_BETWEEN_CARDS * 3;
+    let total_height = left_card.size.height.max(right_card.size.height) + PADDING_BETWEEN_CARDS * 2;
+    let required_len = (total_width * total_height * 4) as usize;
+    let mut buffer = vec![0u8; required_len];
+    let (w, h) = composite_drop_into(
+        &mut buffer,
+        left_card,
+        right_card,
+        left_card_print,
+        right_card_print,
+    );
+    (buffer, w, h)
+}
+
+// combine two card images and add print numbers = drop image
+// we manually copy pixel rows from the card images. this is much faster
+// than creating a new blank image and using a library to paste the card images to it.
+pub(super) fn create_drop_image(
+    left_card: &RawCardImage,
+    right_card: &RawCardImage,
+    left_card_print: PrintNumber,
+    right_card_print: PrintNumber,
+) -> Result<Bytes> {
+    let left_width = left_card.size.width;
+    let right_width = right_card.size.width;
+
+    let total_width = left_width + right_width + PADDING_BETWEEN_CARDS * 3;
+    let max_card_height = left_card.size.height.max(right_card.size.height);
+    let total_height = max_card_height + PADDING_BETWEEN_CARDS * 2;
+
+    let required_len = (total_width * total_height * 4) as usize;
+    let mut buffer = BufferGuard::new(DROP_POOL.pop().unwrap_or_default(), required_len);
+
+    composite_drop_into(
+        &mut buffer,
+        left_card,
+        right_card,
+        left_card_print,
+        right_card_print,
     );
 
     // encode final drop image to webp
