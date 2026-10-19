@@ -15,11 +15,8 @@ use std::{
 
 use bytes::Bytes;
 pub use cache::CardCache;
-pub use canvas::{create_drop_raw, composite_drop_into};
 use canvas::create_drop_image;
 pub use error::{RenderError, Result};
-pub use pixels::{Point, RawCardImage, Size};
-pub use print::init_font;
 use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 use crate::metrics::Metrics;
@@ -54,7 +51,7 @@ impl CardRenderer {
     pub fn new(cards_directory: impl AsRef<Path>) -> Result<Self> {
         let cores = thread::available_parallelism().map_or(4, NonZero::get);
         tracing::info!("sumi woke up with [{cores} cpu cores]");
-        init_font();
+        print::init_font();
 
         Ok(Self {
             card_cache: CardCache::new(cards_directory.as_ref())?,
@@ -63,14 +60,6 @@ impl CardRenderer {
             cpu_semaphore: Arc::new(Semaphore::new(cores)),
             total_permits: cores,
         })
-    }
-
-    pub fn available_permits(&self) -> usize {
-        self.cpu_semaphore.available_permits()
-    }
-
-    pub fn total_permits(&self) -> usize {
-        self.total_permits
     }
 
     // wait for all background workers to finish
@@ -94,51 +83,25 @@ impl CardRenderer {
         left_print_number: PrintNumber,
         right_print_number: PrintNumber,
     ) -> Result<Bytes> {
-        struct InFlightGuard<'a>(&'a Metrics);
-        impl<'a> InFlightGuard<'a> {
-            fn new(metrics: &'a Metrics) -> Self {
-                metrics.inc_in_flight();
-                Self(metrics)
-            }
-        }
-        impl Drop for InFlightGuard<'_> {
-            fn drop(&mut self) {
-                self.0.dec_in_flight();
-            }
-        }
-
-        let _guard = InFlightGuard::new(&self.stats);
-
         let render_future = async {
             let start = Instant::now();
 
-            // Fetch cards from cache first so semaphore permits are only held
-            // during active CPU rendering, avoiding pipeline starvation.
-            let (left_card, right_card) = try_join!(
-                self.card_cache.get(left_card_name),
-                self.card_cache.get(right_card_name)
-            )?;
-
-            // Bounded queue wait (Load Shedding):
-            // Under sudden traffic spikes, if a CPU permit cannot be acquired within 3.0s,
-            // fail-fast with Overloaded (503) so upstream callers don't suffer queue death spirals.
-            let permit = match timeout(
-                Duration::from_millis(3000),
-                self.cpu_semaphore.clone().acquire_owned(),
-            )
-            .await
-            {
-                Ok(Ok(p)) => p,
-                Ok(Err(_)) => return Err(RenderError::Internal("cpu semaphore died".to_string())),
-                Err(_) => {
-                    self.stats.record_overloaded();
-                    return Err(RenderError::Overloaded);
-                }
-            };
+            let permit = self
+                .cpu_semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| RenderError::Internal("cpu semaphore died".to_string()))?;
 
             if start.elapsed() >= Duration::from_secs(5) {
                 return Err(RenderError::Timeout);
             }
+
+            // fetch the cards from cache
+            let (left_card, right_card) = try_join!(
+                self.card_cache.get(left_card_name),
+                self.card_cache.get(right_card_name)
+            )?;
 
             // Move the heavy image work to a background thread
             let result = task::spawn_blocking(move || {
