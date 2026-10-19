@@ -29,6 +29,7 @@
   tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"], default-features = false }
   webpx              = { version = "0.4.0", features = ["decode", "encode"], default-features = false }
   butteraugli        = ">=0.9.3"
+  fast-ssim2         = "0.8"
   imgref             = "1.11"
   rgb                = "0.8"
 
@@ -42,7 +43,15 @@ path = "src/bin/bot.rs"
 
 [[bin]]
 name = "calibrate"
+path = "src/bin/calibrate.rs"
+
+[[bin]]
+name = "butteraugli"
 path = "src/bin/butteraugli.rs"
+
+[[bin]]
+name = "ssimulacra2"
+path = "src/bin/ssimulacra2.rs"
 
 [lints.rust]
   rust_2024_compatibility = { level = "warn", priority = -1 }
