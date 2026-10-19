@@ -15,9 +15,11 @@ use std::{
 
 use bytes::Bytes;
 pub use cache::CardCache;
+pub use canvas::{create_drop_raw, composite_drop_into};
 use canvas::create_drop_image;
 pub use error::{RenderError, Result};
-use print::init_font;
+pub use pixels::{Point, RawCardImage, Size};
+pub use print::init_font;
 use tokio::{sync::Semaphore, task, time::timeout, try_join};
 
 use crate::metrics::Metrics;
@@ -63,6 +65,14 @@ impl CardRenderer {
         })
     }
 
+    pub fn available_permits(&self) -> usize {
+        self.cpu_semaphore.available_permits()
+    }
+
+    pub fn total_permits(&self) -> usize {
+        self.total_permits
+    }
+
     // wait for all background workers to finish
     pub async fn wait_for_tasks_to_finish(&self) {
         let active_tasks =
@@ -84,6 +94,21 @@ impl CardRenderer {
         left_print_number: PrintNumber,
         right_print_number: PrintNumber,
     ) -> Result<Bytes> {
+        struct InFlightGuard<'a>(&'a Metrics);
+        impl<'a> InFlightGuard<'a> {
+            fn new(metrics: &'a Metrics) -> Self {
+                metrics.inc_in_flight();
+                Self(metrics)
+            }
+        }
+        impl Drop for InFlightGuard<'_> {
+            fn drop(&mut self) {
+                self.0.dec_in_flight();
+            }
+        }
+
+        let _guard = InFlightGuard::new(&self.stats);
+
         let render_future = async {
             let start = Instant::now();
 
@@ -94,12 +119,22 @@ impl CardRenderer {
                 self.card_cache.get(right_card_name)
             )?;
 
-            let permit = self
-                .cpu_semaphore
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|_| RenderError::Internal("cpu semaphore died".to_string()))?;
+            // Bounded queue wait (Load Shedding):
+            // Under sudden traffic spikes, if a CPU permit cannot be acquired within 3.0s,
+            // fail-fast with Overloaded (503) so upstream callers don't suffer queue death spirals.
+            let permit = match timeout(
+                Duration::from_millis(3000),
+                self.cpu_semaphore.clone().acquire_owned(),
+            )
+            .await
+            {
+                Ok(Ok(p)) => p,
+                Ok(Err(_)) => return Err(RenderError::Internal("cpu semaphore died".to_string())),
+                Err(_) => {
+                    self.stats.record_overloaded();
+                    return Err(RenderError::Overloaded);
+                }
+            };
 
             if start.elapsed() >= Duration::from_secs(5) {
                 return Err(RenderError::Timeout);
