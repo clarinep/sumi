@@ -42,10 +42,6 @@ name = "sumi-bot"
 path = "src/bin/bot.rs"
 
 [[bin]]
-name = "calibrate"
-path = "src/bin/calibrate.rs"
-
-[[bin]]
 name = "butteraugli"
 path = "src/bin/butteraugli.rs"
 
