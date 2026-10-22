@@ -17,8 +17,8 @@ jobs:
       HOST: 127.0.0.1
       PORT: 8888
       CARDS_DIR: ${{ github.workspace }}/assets
-      BENCH_LEFT: card_name_here
-      BENCH_RIGHT: card_name_here
+      BENCH_LEFT: IMG_4729
+      BENCH_RIGHT: IMG_4730
 
     steps:
       - uses: actions/checkout@v4
